@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "pico.h"
+#include "hardware/sync.h"
 
 #define DI_RING_BUFFER_SIZE 512
 static hstx_data_island_t di_ring_buffer[DI_RING_BUFFER_SIZE];
@@ -13,14 +14,14 @@ static volatile uint32_t di_ring_tail = 0;
 static hstx_data_island_t silence_packet;
 
 // Audio timing state (default 48kHz, 525 lines for 480p)
-static uint32_t audio_sample_accum = 0; // Fixed-point accumulator
+static uint32_t audio_sample_accum = 0; // Fixed-point accumulator (now Bresenham style)
 static uint32_t cached_v_total_lines = 525;
 #define DEFAULT_SAMPLES_PER_FRAME (48000 / 60)
-static uint32_t samples_per_line_fp = (DEFAULT_SAMPLES_PER_FRAME << 16) / 525;
+static uint32_t samples_per_frame = DEFAULT_SAMPLES_PER_FRAME;
 
 // Limit accumulator to avoid overflow if we run dry.
-// Clamping to 1 packet (plus a tiny margin is implicit) ensures we don't burst.
-#define MAX_AUDIO_ACCUM (4 << 16)
+// Limit to 2 packets worth of accumulation so it catches up properly but doesn't overflow.
+static uint32_t max_audio_accum = (8 * 525);
 
 void hstx_di_queue_init(void)
 {
@@ -36,18 +37,19 @@ void hstx_di_queue_init(void)
 
 void hstx_di_queue_set_sample_rate(uint32_t sample_rate)
 {
-    uint32_t samples_per_frame = sample_rate / 60;
-    samples_per_line_fp = (samples_per_frame << 16) / cached_v_total_lines;
+    samples_per_frame = sample_rate / 60;
 }
 
 void hstx_di_queue_set_v_total(uint32_t v_total)
 {
     cached_v_total_lines = v_total;
+    max_audio_accum = 8 * v_total;
 }
 
 void hstx_di_queue_set_samples_per_line_fp(uint32_t value)
 {
-    samples_per_line_fp = value;
+    // Legacy support, try to deduce samples_per_frame from line_fp
+    samples_per_frame = (value * cached_v_total_lines) >> 16;
 }
 
 bool __not_in_flash("audio") hstx_di_queue_push(const hstx_data_island_t *island)
@@ -72,19 +74,28 @@ uint32_t __not_in_flash("audio") hstx_di_queue_get_level(void)
 
 void __scratch_x("") hstx_di_queue_tick(void)
 {
-    audio_sample_accum += samples_per_line_fp;
+    audio_sample_accum += samples_per_frame;
+    if (audio_sample_accum > max_audio_accum) {
+        audio_sample_accum = max_audio_accum;
+    }
 }
+
+/* Debug: track silence fallback hits. Check via hstx_di_queue_get_underrun_count() */
+static volatile uint32_t audio_underrun_count = 0;
+
+uint32_t hstx_di_queue_get_underrun_count(void) { return audio_underrun_count; }
 
 const uint32_t *__scratch_x("") hstx_di_queue_get_audio_packet(void)
 {
-    // Check if it's time to send a 4-sample audio packet (every ~2.6 lines)
-    if (audio_sample_accum >= (4 << 16)) {
-        audio_sample_accum -= (4 << 16);
+    uint32_t threshold = 4 * cached_v_total_lines;
+    if (audio_sample_accum >= threshold) {
+        audio_sample_accum -= threshold;
         if (di_ring_tail != di_ring_head) {
             const uint32_t *words = di_ring_buffer[di_ring_tail].words;
             di_ring_tail = (di_ring_tail + 1) % DI_RING_BUFFER_SIZE;
             return words;
         }
+        audio_underrun_count++;
         return silence_packet.words;
     }
     return NULL;

@@ -120,14 +120,22 @@ static void __not_in_flash("audio") audio_push_samples(const int16_t *buf, int c
         int new_fc = hstx_packet_set_audio_samples(&packet, samples, 4, audio_frame_counter);
         hstx_data_island_t island;
         hstx_encode_data_island(&island, &packet, false, true);
-        if (!hstx_di_queue_push(&island))
+        if (!hstx_di_queue_push(&island)) {
+            // Queue full: just drop the remainder of the packet (we could block, but that stalls NES)
+            // Save ONLY what fits, or avoid overrunning audio_carry!
             break;
+        }
         audio_frame_counter = new_fc;
         pos += 4;
     }
 
     /* Save leftover for next call */
     audio_carry_count = count - pos;
+    if (audio_carry_count > 3) {
+        // We dropped packets due to full queue, clamp carry to avoid buffer overflow
+        audio_carry_count = count % 4;
+        pos = count - audio_carry_count;
+    }
     for (int i = 0; i < audio_carry_count; i++)
         audio_carry[i] = buf[pos + i];
     hstx_di_queue_update_silence(audio_frame_counter);
@@ -397,8 +405,10 @@ static void real_main(void)
          * deficit (~1.5 samples/frame) handled by ISR silence fallback. */
         int16_t tmp[1024];
         long n = qnes_read_samples(tmp, 1024);
-        if (n > 0)
+        
+        if (n > 0) {
             audio_push_samples(tmp, (int)n);
+        }
 
         update_palette();
         frame_pitch = 272;
