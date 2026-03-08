@@ -14,7 +14,6 @@
 #endif
 
 #include "hardware/clocks.h"
-#include "hardware/sync.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -75,14 +74,10 @@ static bool push_audio_packet(const audio_sample_t *samples)
     return true;
 }
 
-static volatile bool audio_busy = false;
-
-static void feed_audio(void)
+/* feed_audio runs on Core 1 background task — all encoding in SRAM,
+ * no flash access, immune to Core 0 emulation flash thrashing */
+static void __not_in_flash("audio") feed_audio(void)
 {
-    if (audio_busy) return;
-    audio_busy = true;
-
-    /* Push real NES audio samples */
     while (nes_audio_pos + 4 <= nes_audio_count) {
         audio_sample_t samples[4];
         for (int i = 0; i < 4; i++) {
@@ -94,12 +89,7 @@ static void feed_audio(void)
             break;
         nes_audio_pos += 4;
     }
-
-    audio_busy = false;
 }
-
-static struct repeating_timer audio_timer;
-static bool audio_timer_cb(struct repeating_timer *t) { (void)t; feed_audio(); return true; }
 
 static void feed_silence(void)
 {
@@ -307,43 +297,32 @@ static void real_main(void)
     video_output_init(FRAME_WIDTH, FRAME_HEIGHT);
     pico_hdmi_set_audio_sample_rate(SAMPLE_RATE);
     video_output_set_scanline_callback(scanline_callback);
+    video_output_set_background_task(feed_audio);
     multicore_launch_core1(video_output_core1_run);
     sleep_ms(100);
-
-    /* Timer feeds audio every 4ms during emulation, preventing queue drain */
-    add_repeating_timer_ms(-4, audio_timer_cb, NULL, &audio_timer);
     printf("HDMI active\n");
 
 #ifdef HAS_NES_ROM
 
     uint32_t frame_count = 0;
     while (1) {
-        feed_audio();
-
-        for (int wait = 0; !vsync_flag && wait < 20000; wait++) {
-            feed_audio();
+        for (int wait = 0; !vsync_flag && wait < 20000; wait++)
             __wfe();
-        }
         vsync_flag = 0;
 
         int joypad = (frame_count >= 60 && frame_count < 63) ? 0x08 : 0;
         qnes_emulate_frame(joypad, 0);
 
-        /* Read NES audio generated this frame, preserving leftover samples.
-         * Set audio_busy to block timer ISR during buffer swap. */
-        audio_busy = true;
+        /* Read NES audio generated this frame, preserving leftover samples */
         int leftover = nes_audio_count - nes_audio_pos;
         if (leftover > 0)
             memmove(nes_audio_buf, nes_audio_buf + nes_audio_pos, leftover * sizeof(int16_t));
         nes_audio_pos = 0;
         nes_audio_count = leftover + (int)qnes_read_samples(nes_audio_buf + leftover, NES_AUDIO_BUF_SIZE - leftover);
-        audio_busy = false;
 
         update_palette();
         frame_pitch = 272;
         frame_pixels = qnes_get_pixels();
-
-        feed_audio();
 
         frame_count++;
     }

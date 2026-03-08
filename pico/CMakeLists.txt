@@ -105,7 +105,6 @@ target_link_libraries(murmnes
     hardware_dma
     hardware_irq
     hardware_gpio
-    hardware_timer
     pico_hdmi
     sdcard
     ps2kbd

@@ -50,7 +50,7 @@ void hstx_di_queue_set_samples_per_line_fp(uint32_t value)
     samples_per_line_fp = value;
 }
 
-bool hstx_di_queue_push(const hstx_data_island_t *island)
+bool __not_in_flash("audio") hstx_di_queue_push(const hstx_data_island_t *island)
 {
     uint32_t next_head = (di_ring_head + 1) % DI_RING_BUFFER_SIZE;
     if (next_head == di_ring_tail)
@@ -61,7 +61,7 @@ bool hstx_di_queue_push(const hstx_data_island_t *island)
     return true;
 }
 
-uint32_t hstx_di_queue_get_level(void)
+uint32_t __not_in_flash("audio") hstx_di_queue_get_level(void)
 {
     uint32_t head = di_ring_head;
     uint32_t tail = di_ring_tail;
