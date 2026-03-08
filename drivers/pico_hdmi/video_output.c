@@ -170,7 +170,7 @@ static void __scratch_x("") hstx_resync(void)
 // Internal Helpers
 // ============================================================================
 
-static uint32_t build_line_with_di(uint32_t *buf, const uint32_t *di_words, bool vsync, bool active)
+static uint32_t __scratch_x("hdmi") build_line_with_di(uint32_t *buf, const uint32_t *di_words, bool vsync, bool active)
 {
     uint32_t *p = buf;
     uint32_t sync_h0 = vsync ? SYNC_V0_H0 : SYNC_V1_H0;

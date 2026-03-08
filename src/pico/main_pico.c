@@ -13,6 +13,7 @@
 
 #include "hardware/clocks.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -52,13 +53,42 @@ static void __not_in_flash("vsync") vsync_cb(void)
     __sev(); /* wake Core 0 from WFE */
 }
 
-/* Audio */
+/* Audio: 440 Hz sine tone at 48 kHz (HDMI default) */
+#define AUDIO_SAMPLE_RATE 48000
+#define TONE_FREQ 440
+#define TONE_AMPLITUDE 6000
+#define SINE_TABLE_SIZE 256
+
+static int16_t sine_table[SINE_TABLE_SIZE];
+static uint32_t audio_phase = 0;
+static uint32_t phase_increment = 0;
 static int audio_frame_counter = 0;
+
+static void init_sine_table(void)
+{
+    for (int i = 0; i < SINE_TABLE_SIZE; i++) {
+        float angle = (float)i * 2.0f * 3.14159265f / SINE_TABLE_SIZE;
+        sine_table[i] = (int16_t)(sinf(angle) * TONE_AMPLITUDE);
+    }
+    phase_increment = (uint32_t)(((uint64_t)TONE_FREQ << 32) / AUDIO_SAMPLE_RATE);
+}
+
+static inline int16_t get_sine_sample(void)
+{
+    int16_t s = sine_table[(audio_phase >> 24) & 0xFF];
+    audio_phase += phase_increment;
+    return s;
+}
 
 static void feed_audio(void)
 {
     while (hstx_di_queue_get_level() < 200) {
-        audio_sample_t samples[4] = {0};
+        audio_sample_t samples[4];
+        for (int i = 0; i < 4; i++) {
+            int16_t s = get_sine_sample();
+            samples[i].left = s;
+            samples[i].right = s;
+        }
         hstx_packet_t packet;
         audio_frame_counter = hstx_packet_set_audio_samples(&packet, samples, 4, audio_frame_counter);
         hstx_data_island_t island;
@@ -222,88 +252,73 @@ static void real_main(void)
     paint_stack();
     sleep_ms(500);
 
-    /* Show test pattern immediately so HDMI has valid pixel data from first scanline */
     generate_test_pattern();
 
-    /* Init HDMI in DVI mode (no audio packets needed — more stable link) */
+    /* DVI mode during init — no data islands, immune to flash contention */
     hstx_di_queue_init();
     video_output_init(FRAME_WIDTH, FRAME_HEIGHT);
     video_output_set_dvi_mode(true);
     video_output_set_scanline_callback(scanline_callback);
     video_output_set_vsync_callback(vsync_cb);
+
     multicore_launch_core1(video_output_core1_run);
     sleep_ms(100);
 
-    /* Wait for USB serial */
     for (int i = 0; i < 50; i++) {
         if (stdio_usb_connected()) break;
         sleep_ms(100);
-        feed_audio();
     }
     printf("\n=== murmnes (QuickNES) ===\n");
     printf("sys_clk: %lu Hz\n", (unsigned long)clock_get_hz(clk_sys));
 
-    feed_audio();
-
-    /* Init QuickNES */
     printf("qnes_init...\n");
     if (qnes_init(SAMPLE_RATE) != 0)
         error_loop("qnes_init failed");
     printf("qnes_init OK\n");
 
-    feed_audio();
-
 #ifdef HAS_NES_ROM
     long rom_size = (long)(nes_rom_end - nes_rom_data);
-    printf("ROM size: %ld bytes\n", rom_size);
-    printf("ROM addr: %p\n", (const void *)nes_rom_data);
-
-    feed_audio();
-
-    printf("qnes_load_rom...\n");
+    printf("qnes_load_rom (%ld bytes)...\n", rom_size);
     if (qnes_load_rom(nes_rom_data, rom_size) != 0)
         error_loop("qnes_load_rom failed");
     printf("ROM loaded OK\n");
 
+    /* Switch to HDMI with audio — Core 0 feeds queue between frames */
+    init_sine_table();
     feed_audio();
+    video_output_set_dvi_mode(false);
+    printf("HDMI mode active\n");
 
-    /*
-     * Main emulation loop — vsync-synchronized.
-     *
-     * Timing: vsync fires at start of vblank (~1.4ms before active video).
-     * We start emulate_frame() immediately → PPU renders top-to-bottom in ~2ms.
-     * By the time active video reads line 0, the PPU is already past line ~170.
-     * Result: no tearing without double buffering.
-     */
     uint32_t frame_count = 0;
-
     while (1) {
-        /* Wait for vsync (vblank start), with timeout fallback */
-        for (int wait = 0; !vsync_flag && wait < 20000; wait++)
+        feed_audio();
+
+        for (int wait = 0; !vsync_flag && wait < 20000; wait++) {
+            feed_audio();
             __wfe();
+        }
         vsync_flag = 0;
 
-        /* Emulate one NES frame — PPU writes pixels top-to-bottom */
         qnes_emulate_frame(0, 0);
 
-        /* Update palette and pixel pointer (atomic pointer swap) */
         update_palette();
         frame_pitch = 272;
         frame_pixels = qnes_get_pixels();
 
+        feed_audio();
+
         frame_count++;
-        if (frame_count % 300 == 0) {
-            printf("f%lu stk=%lu\n",
+        if (frame_count % 60 == 0)
+            printf("[EMU] f=%lu vfc=%lu stk=%lu\n",
                    (unsigned long)frame_count,
+                   (unsigned long)video_frame_count,
                    (unsigned long)check_stack_free());
-        }
     }
 #else
     printf("No ROM embedded. Showing test pattern.\n");
-    generate_test_pattern();
-    while (1) {
-        feed_audio();
-        sleep_ms(16);
-    }
+    init_sine_table();
+    feed_audio();
+    video_output_set_dvi_mode(false);
+    while (1) { feed_audio(); sleep_ms(16); }
 #endif
 }
