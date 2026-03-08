@@ -85,8 +85,15 @@ const uint32_t *__scratch_x("") hstx_di_queue_get_audio_packet(void)
             di_ring_tail = (di_ring_tail + 1) % DI_RING_BUFFER_SIZE;
             return words;
         }
-        // Queue is empty: return a pre-encoded silent packet to keep HDMI audio active.
         return silence_packet.words;
     }
     return NULL;
+}
+
+void __not_in_flash("audio") hstx_di_queue_update_silence(int frame_counter)
+{
+    hstx_packet_t packet;
+    audio_sample_t samples[4] = {0};
+    (void)hstx_packet_set_audio_samples(&packet, samples, 4, frame_counter);
+    hstx_encode_data_island(&silence_packet, &packet, false, true);
 }

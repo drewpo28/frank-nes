@@ -55,4 +55,11 @@ void hstx_di_queue_tick(void);
  */
 const uint32_t *hstx_di_queue_get_audio_packet(void);
 
+/**
+ * Update the silence fallback packet with a current frame counter.
+ * Call periodically from Core 1 background task to keep B-frame
+ * sequencing valid when the queue briefly empties.
+ */
+void hstx_di_queue_update_silence(int frame_counter);
+
 #endif // HSTX_DATA_ISLAND_QUEUE_H

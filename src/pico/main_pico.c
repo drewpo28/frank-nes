@@ -54,15 +54,33 @@ static void __not_in_flash("vsync") vsync_cb(void)
     __sev(); /* wake Core 0 from WFE */
 }
 
-/* NES audio buffer — filled after each emulated frame, drained into HDMI queue.
- * 44100 Hz / 60 fps ≈ 735 mono samples per frame. */
-#define NES_AUDIO_BUF_SIZE 1024
-static int16_t nes_audio_buf[NES_AUDIO_BUF_SIZE];
-static int nes_audio_count = 0;
-static int nes_audio_pos = 0;
+/* Lock-free SPSC ring buffer for raw audio samples between cores.
+ * Core 0 pushes mono samples after each frame.
+ * Core 1 pops, encodes to HDMI packets, pushes to DI queue.
+ * Power-of-2 size for fast masking. ~46ms at 44100 Hz. */
+#define SAMPLE_RING_SIZE 2048
+#define SAMPLE_RING_MASK (SAMPLE_RING_SIZE - 1)
+static int16_t sample_ring[SAMPLE_RING_SIZE];
+static volatile uint32_t sample_ring_head = 0; /* Core 0 writes */
+static volatile uint32_t sample_ring_tail = 0; /* Core 1 reads */
 static int audio_frame_counter = 0;
 
-static bool push_audio_packet(const audio_sample_t *samples)
+/* Core 0: push raw mono samples into ring buffer */
+static void audio_push_samples(const int16_t *buf, int count)
+{
+    uint32_t head = sample_ring_head;
+    for (int i = 0; i < count; i++) {
+        uint32_t next = (head + 1) & SAMPLE_RING_MASK;
+        if (next == sample_ring_tail)
+            break;
+        sample_ring[head] = buf[i];
+        head = next;
+    }
+    __dmb(); /* ensure sample writes are visible before head update */
+    sample_ring_head = head;
+}
+
+static bool __not_in_flash("audio") push_audio_packet(const audio_sample_t *samples)
 {
     hstx_packet_t packet;
     int new_fc = hstx_packet_set_audio_samples(&packet, samples, 4, audio_frame_counter);
@@ -74,21 +92,33 @@ static bool push_audio_packet(const audio_sample_t *samples)
     return true;
 }
 
-/* feed_audio runs on Core 1 background task — all encoding in SRAM,
- * no flash access, immune to Core 0 emulation flash thrashing */
+/* Core 1 background task: pop samples from ring, encode, push to HDMI queue.
+ * All code + data in SRAM — zero flash access. */
 static void __not_in_flash("audio") feed_audio(void)
 {
-    while (nes_audio_pos + 4 <= nes_audio_count) {
+    uint32_t tail = sample_ring_tail;
+    uint32_t head = sample_ring_head;
+    uint32_t avail = (head - tail) & SAMPLE_RING_MASK;
+
+    while (avail >= 4) {
         audio_sample_t samples[4];
         for (int i = 0; i < 4; i++) {
-            int16_t s = nes_audio_buf[nes_audio_pos + i];
+            int16_t s = sample_ring[tail];
             samples[i].left = s;
             samples[i].right = s;
+            tail = (tail + 1) & SAMPLE_RING_MASK;
         }
-        if (!push_audio_packet(samples))
+        if (!push_audio_packet(samples)) {
+            tail = (tail - 4) & SAMPLE_RING_MASK; /* rollback */
             break;
-        nes_audio_pos += 4;
+        }
+        avail -= 4;
     }
+    __dmb(); /* ensure sample reads complete before tail update */
+    sample_ring_tail = tail;
+
+    /* Keep silence fallback packet's B-frame counter in sync */
+    hstx_di_queue_update_silence(audio_frame_counter);
 }
 
 static void feed_silence(void)
@@ -313,12 +343,18 @@ static void real_main(void)
         int joypad = (frame_count >= 60 && frame_count < 63) ? 0x08 : 0;
         qnes_emulate_frame(joypad, 0);
 
-        /* Read NES audio generated this frame, preserving leftover samples */
-        int leftover = nes_audio_count - nes_audio_pos;
-        if (leftover > 0)
-            memmove(nes_audio_buf, nes_audio_buf + nes_audio_pos, leftover * sizeof(int16_t));
-        nes_audio_pos = 0;
-        nes_audio_count = leftover + (int)qnes_read_samples(nes_audio_buf + leftover, NES_AUDIO_BUF_SIZE - leftover);
+        /* Read NES audio and push into lock-free ring buffer for Core 1.
+         * Pad to exactly 735 samples (44100/60) to match ISR consumption. */
+        {
+            int16_t tmp[1024];
+            long n = qnes_read_samples(tmp, 1024);
+            /* Pad with silence to match ISR rate */
+            int target = SAMPLE_RATE / 60; /* 735 */
+            while (n < target && n < 1024)
+                tmp[n++] = 0;
+            if (n > 0)
+                audio_push_samples(tmp, (int)n);
+        }
 
         update_palette();
         frame_pitch = 272;
