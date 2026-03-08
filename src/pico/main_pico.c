@@ -13,7 +13,6 @@
 
 #include "hardware/clocks.h"
 
-#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -53,42 +52,35 @@ static void __not_in_flash("vsync") vsync_cb(void)
     __sev(); /* wake Core 0 from WFE */
 }
 
-/* Audio: 440 Hz sine tone at 48 kHz (HDMI default) */
-#define AUDIO_SAMPLE_RATE 48000
-#define TONE_FREQ 440
-#define TONE_AMPLITUDE 6000
-#define SINE_TABLE_SIZE 256
-
-static int16_t sine_table[SINE_TABLE_SIZE];
-static uint32_t audio_phase = 0;
-static uint32_t phase_increment = 0;
+/* NES audio buffer — filled after each emulated frame, drained into HDMI queue.
+ * 44100 Hz / 60 fps ≈ 735 mono samples per frame. */
+#define NES_AUDIO_BUF_SIZE 1024
+static int16_t nes_audio_buf[NES_AUDIO_BUF_SIZE];
+static int nes_audio_count = 0;
+static int nes_audio_pos = 0;
 static int audio_frame_counter = 0;
-
-static void init_sine_table(void)
-{
-    for (int i = 0; i < SINE_TABLE_SIZE; i++) {
-        float angle = (float)i * 2.0f * 3.14159265f / SINE_TABLE_SIZE;
-        sine_table[i] = (int16_t)(sinf(angle) * TONE_AMPLITUDE);
-    }
-    phase_increment = (uint32_t)(((uint64_t)TONE_FREQ << 32) / AUDIO_SAMPLE_RATE);
-}
-
-static inline int16_t get_sine_sample(void)
-{
-    int16_t s = sine_table[(audio_phase >> 24) & 0xFF];
-    audio_phase += phase_increment;
-    return s;
-}
 
 static void feed_audio(void)
 {
-    while (hstx_di_queue_get_level() < 200) {
+    while (hstx_di_queue_get_level() < 200 && nes_audio_pos + 4 <= nes_audio_count) {
         audio_sample_t samples[4];
         for (int i = 0; i < 4; i++) {
-            int16_t s = get_sine_sample();
+            int16_t s = nes_audio_buf[nes_audio_pos++];
             samples[i].left = s;
             samples[i].right = s;
         }
+        hstx_packet_t packet;
+        audio_frame_counter = hstx_packet_set_audio_samples(&packet, samples, 4, audio_frame_counter);
+        hstx_data_island_t island;
+        hstx_encode_data_island(&island, &packet, false, true);
+        hstx_di_queue_push(&island);
+    }
+}
+
+static void feed_silence(void)
+{
+    while (hstx_di_queue_get_level() < 200) {
+        audio_sample_t samples[4] = {0};
         hstx_packet_t packet;
         audio_frame_counter = hstx_packet_set_audio_samples(&packet, samples, 4, audio_frame_counter);
         hstx_data_island_t island;
@@ -283,9 +275,9 @@ static void real_main(void)
         error_loop("qnes_load_rom failed");
     printf("ROM loaded OK\n");
 
-    /* Switch to HDMI with audio — Core 0 feeds queue between frames */
-    init_sine_table();
-    feed_audio();
+    /* Switch to HDMI with NES audio at 44100 Hz */
+    pico_hdmi_set_audio_sample_rate(SAMPLE_RATE);
+    feed_silence();
     video_output_set_dvi_mode(false);
     printf("HDMI mode active\n");
 
@@ -299,7 +291,24 @@ static void real_main(void)
         }
         vsync_flag = 0;
 
-        qnes_emulate_frame(0, 0);
+        /* Auto-press START at 1s to begin game (for audio testing) */
+        int joypad = (frame_count >= 60 && frame_count < 63) ? 0x08 : 0;
+        qnes_emulate_frame(joypad, 0);
+
+        /* Read NES audio generated this frame */
+        nes_audio_pos = 0;
+        nes_audio_count = (int)qnes_read_samples(nes_audio_buf, NES_AUDIO_BUF_SIZE);
+
+        /* Debug: print audio stats for first 3 seconds */
+        if (frame_count < 180 && frame_count % 30 == 0) {
+            int16_t peak = 0;
+            for (int i = 0; i < nes_audio_count; i++) {
+                int16_t a = nes_audio_buf[i] < 0 ? -nes_audio_buf[i] : nes_audio_buf[i];
+                if (a > peak) peak = a;
+            }
+            printf("f%lu: read=%d peak=%d\n",
+                   (unsigned long)frame_count, nes_audio_count, peak);
+        }
 
         update_palette();
         frame_pitch = 272;
@@ -308,17 +317,11 @@ static void real_main(void)
         feed_audio();
 
         frame_count++;
-        if (frame_count % 60 == 0)
-            printf("[EMU] f=%lu vfc=%lu stk=%lu\n",
-                   (unsigned long)frame_count,
-                   (unsigned long)video_frame_count,
-                   (unsigned long)check_stack_free());
     }
 #else
     printf("No ROM embedded. Showing test pattern.\n");
-    init_sine_table();
-    feed_audio();
+    feed_silence();
     video_output_set_dvi_mode(false);
-    while (1) { feed_audio(); sleep_ms(16); }
+    while (1) { sleep_ms(100); }
 #endif
 }
