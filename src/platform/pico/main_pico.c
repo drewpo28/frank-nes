@@ -634,8 +634,8 @@ static void real_main(void)
 
     if (rom_loaded) {
         while (1) {
-            /* Wait for vsync. No double-buffer gate — frame pointer is
-             * applied immediately after emulation for lowest input latency. */
+            /* Wait for vsync — Core 1 applies pending frame during vblank,
+             * then signals us to emulate the next frame. */
             uint32_t wait_start = time_us_32();
             while (!vsync_flag && (time_us_32() - wait_start) < 20000) {
 #if USB_HID_ENABLED
@@ -695,11 +695,10 @@ static void real_main(void)
 
             update_palette();
 
-            /* Apply frame immediately — reduces input latency by 1 frame
-             * vs double-buffered vsync. Minor tearing possible but
-             * acceptable for retro games. */
-            frame_pitch = 272;
-            frame_pixels = qnes_get_pixels();
+            /* Post frame to pending buffer — vsync callback will apply it
+             * during vblank for tear-free display. */
+            pending_pitch = 272;
+            pending_pixels = qnes_get_pixels();
 
         }
     } else {
