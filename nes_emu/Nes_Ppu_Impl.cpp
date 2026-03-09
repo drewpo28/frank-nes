@@ -3,6 +3,7 @@
 
 #include "Nes_Ppu_Impl.h"
 
+#include <stdio.h>
 #include <string.h>
 #include "blargg_endian.h"
 #include "Nes_State.h"
@@ -62,13 +63,16 @@ void Nes_Ppu_Impl::all_tiles_modified()
 
 const char *Nes_Ppu_Impl::open_chr( uint8_t const* new_chr, long chr_data_size )
 {
+	printf("  open_chr(%p, %ld) impl=%p\n", new_chr, chr_data_size, impl);
 	close_chr();
-	
+
 	if ( !impl )
 	{
+		printf("  new PPU impl_t (%d bytes)...\n", (int)sizeof(impl_t));
 		impl = new impl_t;
 		CHECK_ALLOC( impl );
 		chr_ram = impl->chr_ram;
+		printf("  PPU impl_t -> %p\n", impl);
 	}
 	
 	chr_data = new_chr;
@@ -100,8 +104,10 @@ const char *Nes_Ppu_Impl::open_chr( uint8_t const* new_chr, long chr_data_size )
 	if ( !tile_cache_mem )
 #endif
 	{
+		printf("  tile cache new %ld bytes (heap)...\n", cache_bytes);
 		tile_cache_mem = new uint8_t [cache_bytes];
 	}
+	printf("  tile_cache_mem=%p ext=%d\n", tile_cache_mem, tile_cache_mem_ext);
 	CHECK_ALLOC( tile_cache_mem );
 	tile_cache = (cached_tile_t*) (tile_cache_mem + cache_line_size -
 			(uintptr_t) tile_cache_mem % cache_line_size);

@@ -568,7 +568,14 @@ static void real_main(void)
     if (rom_loaded) {
         uint32_t frame_count = 0;
         while (1) {
-            for (int wait = 0; !vsync_flag && wait < 20000; wait++)
+            /* Wait for vsync AND ensure the previous pending frame was
+             * consumed by vsync_cb.  Without the pending_pixels check,
+             * a "stale" vsync_flag (set while we were still emulating)
+             * lets us proceed immediately — and we'd start writing to
+             * the back-buffer that is still being displayed. */
+            for (int wait = 0;
+                 (!vsync_flag || pending_pixels) && wait < 20000;
+                 wait++)
                 __wfe();
             vsync_flag = 0;
 

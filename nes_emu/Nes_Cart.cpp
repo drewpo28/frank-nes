@@ -3,6 +3,7 @@
 
 #include "Nes_Cart.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -138,6 +139,7 @@ const char * Nes_Cart::load_ines_data( const void* data, long size )
 		h.flags2 = 0;
 
 	set_mapper( h.flags, h.flags2 );
+	printf("  mapper=%d prg_banks=%d chr_banks=%d\n", mapper, h.prg_count, h.chr_count);
 
 	if ( h.flags & 0x04 )
 		p += 512; // skip trainer
@@ -148,13 +150,25 @@ const char * Nes_Cart::load_ines_data( const void* data, long size )
 	if ( p + prg_bytes + chr_bytes > (const uint8_t*) data + size )
 		return "ROM file too small";
 
-	/* Copy PRG into SRAM — the 6502 fetches every instruction from here,
-	   so it must be fast (not behind QMI/PSRAM). */
+	/* Copy PRG into SRAM for fast 6502 instruction fetch when it fits.
+	   Pico SDK's malloc panics on failure, so check size first.
+	   Falls back to in-place (PSRAM/flash) for large ROMs. */
 	prg_size_ = prg_bytes;
-	prg_ = (uint8_t*) malloc( round_to_bank_size( prg_bytes ) + 2 );
-	CHECK_ALLOC( prg_ );
-	memcpy( prg_, p, prg_bytes );
-	prg_owned_ = true;
+	long prg_alloc = round_to_bank_size( prg_bytes ) + 2;
+	if ( prg_alloc <= 128 * 1024L ) {
+		prg_ = (uint8_t*) malloc( prg_alloc );
+	} else {
+		prg_ = NULL;
+	}
+	if ( prg_ ) {
+		memcpy( prg_, p, prg_bytes );
+		prg_owned_ = true;
+		printf("  PRG %ldKB -> SRAM\n", prg_bytes/1024);
+	} else {
+		prg_ = (uint8_t*) p;
+		prg_owned_ = false;
+		printf("  PRG %ldKB -> in-place\n", prg_bytes/1024);
+	}
 	p += prg_bytes;
 
 	/* CHR stays zero-copy — it is only accessed indirectly through the

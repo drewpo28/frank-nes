@@ -3,6 +3,7 @@
 
 #include "Nes_Core.h"
 
+#include <stdio.h>
 #include <string.h>
 #include "Nes_Mapper.h"
 #include "Nes_State.h"
@@ -65,15 +66,20 @@ void Nes_Core::close()
 
 const char * Nes_Core::open( Nes_Cart const* new_cart )
 {
+	printf("Nes_Core::open mapper=%d prg=%ldK chr=%ldK\n",
+		new_cart->mapper_code(), new_cart->prg_size()/1024, new_cart->chr_size()/1024);
 	close();
-	
+
 	RETURN_ERR( init() );
-	
+
+	printf("  creating mapper %d...\n", new_cart->mapper_code());
 	mapper = Nes_Mapper::create( new_cart, this );
-	if ( !mapper ) 
+	if ( !mapper )
 		return unsupported_mapper;
+	printf("  mapper created, opening CHR...\n");
 
 	RETURN_ERR( ppu.open_chr( new_cart->chr(), new_cart->chr_size() ) );
+	printf("  CHR opened OK\n");
 	
 	cart = new_cart;
 	memset( impl->unmapped_page, unmapped_fill, sizeof impl->unmapped_page );
