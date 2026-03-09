@@ -31,7 +31,7 @@ fi
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-cmake $CMAKE_OPTS ../pico
+cmake $CMAKE_OPTS ../src/platform/pico
 make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 echo ""

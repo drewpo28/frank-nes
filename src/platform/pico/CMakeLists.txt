@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.13)
 
 set(PICO_BOARD pico2 CACHE STRING "Board type")
 
-include(${CMAKE_CURRENT_LIST_DIR}/../pico_sdk_import.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/../../../pico_sdk_import.cmake)
 
 project(murmnes C CXX ASM)
 
@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 pico_sdk_init()
 
-set(PROJECT_ROOT ${CMAKE_CURRENT_LIST_DIR}/..)
+set(PROJECT_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../..)
 set(SRCDIR ${PROJECT_ROOT}/src)
 set(DRIVERSDIR ${SRCDIR}/drivers)
 set(COREDIR ${SRCDIR}/core)
@@ -26,7 +26,7 @@ add_subdirectory(${DRIVERSDIR}/pico_hdmi pico_hdmi)
 set(PSRAM_MAX_FREQ_MHZ 133 CACHE STRING "PSRAM clock frequency in MHz")
 add_compile_definitions(PSRAM_MAX_FREQ_MHZ=${PSRAM_MAX_FREQ_MHZ})
 
-add_subdirectory(${PROJECT_ROOT}/lib/fatfs fatfs)
+add_subdirectory(${SRCDIR}/lib/fatfs fatfs)
 add_subdirectory(${DRIVERSDIR}/sdcard sdcard)
 add_subdirectory(${DRIVERSDIR}/nespad nespad)
 add_subdirectory(${DRIVERSDIR}/ps2kbd ps2kbd)
