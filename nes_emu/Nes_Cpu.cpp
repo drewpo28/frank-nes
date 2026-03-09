@@ -125,7 +125,7 @@ static const unsigned char clock_table [256] = {
 	3,5,2,8,4,4,6,6,2,4,2,7,4,4,7,7 // F
 };
 
-Nes_Cpu::result_t Nes_Cpu::run( nes_time_t end )
+Nes_Cpu::result_t __attribute__((section(".time_critical.Nes_Cpu_run"))) Nes_Cpu::run( nes_time_t end )
 {
 	set_end_time_( end );
 	clock_count = 0;

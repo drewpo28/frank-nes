@@ -49,15 +49,28 @@ extern const uint8_t nes_rom_end[];
 /* Palette lookup: NES indexed pixel -> RGB565 */
 static uint16_t rgb565_palette[256];
 
-/* Pointer to current frame pixels (set after each emulate_frame) */
+/* Pointer to current frame pixels — only updated during vblank by vsync_cb */
 static const uint8_t *frame_pixels;
 static long frame_pitch;
+
+/* Pending frame update: Core 0 writes here after emulation, Core 1 applies
+   it during the next vsync callback (vblank). Ensures the pointer never
+   changes while active scanlines are being displayed. */
+static volatile const uint8_t *pending_pixels;
+static volatile long pending_pitch;
 
 /* Vsync flag — set by Core 1 DMA ISR, cleared by Core 0 after emulating */
 static volatile uint32_t vsync_flag;
 
 static void __not_in_flash("vsync") vsync_cb(void)
 {
+    /* Apply pending frame pointer during vblank — safe from tearing */
+    const uint8_t *pp = (const uint8_t *)pending_pixels;
+    if (pp) {
+        frame_pixels = pp;
+        frame_pitch = pending_pitch;
+        pending_pixels = NULL;
+    }
     vsync_flag = 1;
     __sev(); /* wake Core 0 from WFE */
 }
@@ -573,8 +586,8 @@ static void real_main(void)
             }
 
             update_palette();
-            frame_pitch = 272;
-            frame_pixels = qnes_get_pixels();
+            pending_pitch = 272;
+            pending_pixels = qnes_get_pixels();
 
             frame_count++;
         }

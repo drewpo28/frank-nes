@@ -49,7 +49,7 @@ nes_time_t const earliest_vbl_end_time = max_frame_length / ppu_overclock - 10;
 
 // Scanline rendering
 
-void Nes_Ppu::render_bg_until_( nes_time_t cpu_time )
+void __attribute__((section(".time_critical.Nes_Ppu_render_bg_until_"))) Nes_Ppu::render_bg_until_( nes_time_t cpu_time )
 {
 	ppu_time_t time = ppu_time( cpu_time );
 	ppu_time_t const frame_duration = scanline_len * 261;
@@ -123,7 +123,7 @@ void Nes_Ppu::render_bg_until_( nes_time_t cpu_time )
 	next_bg_time = nes_time( next_ppu_time );
 }
 
-void Nes_Ppu::render_until_( nes_time_t time )
+void __attribute__((section(".time_critical.Nes_Ppu_render_until_"))) Nes_Ppu::render_until_( nes_time_t time )
 {
 	// render bg scanlines then render sprite scanlines up to wherever bg was rendered to
 	

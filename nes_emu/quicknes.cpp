@@ -94,7 +94,7 @@ int qnes_load_rom_inplace(const void *data, long size)
     return 0;
 }
 
-int qnes_emulate_frame(int joypad1, int joypad2)
+int __attribute__((section(".time_critical.qnes_emulate_frame"))) qnes_emulate_frame(int joypad1, int joypad2)
 {
     if (!rom_loaded)
         return -1;

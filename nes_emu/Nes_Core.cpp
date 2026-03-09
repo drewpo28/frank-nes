@@ -418,7 +418,7 @@ void Nes_Core::event_changed()
 	#define NES_EMU_CPU_HOOK( cpu, end_time ) cpu::run( end_time )
 #endif
 
-nes_time_t Nes_Core::emulate_frame_()
+nes_time_t __attribute__((section(".time_critical.Nes_Core_emulate_frame"))) Nes_Core::emulate_frame_()
 {
 	Nes_Cpu::result_t last_result = cpu::result_cycles;
 	int extra_instructions = 0;
@@ -501,7 +501,7 @@ nes_time_t Nes_Core::emulate_frame_()
 	}
 }
 
-nes_time_t Nes_Core::emulate_frame()
+nes_time_t __attribute__((section(".time_critical.Nes_Core_emulate_frame"))) Nes_Core::emulate_frame()
 {
 	joypad_read_count = 0;
 	

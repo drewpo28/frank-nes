@@ -133,7 +133,7 @@ const char * Nes_Emu::emulate_skip_frame( int joypad1, int joypad2 )
 	return result;
 }
 
-const char * Nes_Emu::emulate_frame( int joypad1, int joypad2 )
+const char * __attribute__((section(".time_critical.Nes_Emu_emulate_frame"))) Nes_Emu::emulate_frame( int joypad1, int joypad2 )
 {
 	emu.current_joypad [0] = (joypad1 |= ~0xFF);
 	emu.current_joypad [1] = (joypad2 |= ~0xFF);
