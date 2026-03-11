@@ -42,10 +42,10 @@ set(TSTTARGET test_all)
 
 
 set(SRCDIR ${CMAKE_SOURCE_DIR}/src)
-set(COREDIR ${SRCDIR}/core)
+set(COREDIR ${SRCDIR}/core_quicknes)
 set(UTILDIR ${SRCDIR}/util)
 set(INCDIR ${SRCDIR})
-set(INCCOREDIR ${SRCDIR}/core)
+set(INCCOREDIR ${SRCDIR}/core_quicknes)
 set(INCUTILDIR ${SRCDIR}/util)
 set(LIBDIR lib)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${LIBDIR})

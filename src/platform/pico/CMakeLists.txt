@@ -14,7 +14,7 @@ pico_sdk_init()
 set(PROJECT_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../..)
 set(SRCDIR ${PROJECT_ROOT}/src)
 set(DRIVERSDIR ${SRCDIR}/drivers)
-set(COREDIR ${SRCDIR}/core)
+set(COREDIR ${SRCDIR}/core_quicknes)
 set(EMU2413DIR ${SRCDIR}/emu2413)
 set(PICODIR ${SRCDIR}/platform/pico)
 
