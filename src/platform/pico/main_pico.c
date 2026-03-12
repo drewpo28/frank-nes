@@ -660,8 +660,11 @@ static void real_main(void)
     printf("USB HID Host initialized\n");
 #endif
 
+    while (1) {  /* outer loop: ROM selector → emulation → reset → ROM selector */
+
     /* Show ROM selector */
-    if (!rom_loaded && num_roms > 0) {
+    rom_loaded = false;
+    if (num_roms > 0) {
         long rom_size = 0;
         if (rom_selector_show(&rom_size)) {
             sd_rom_buf = (uint8_t *)rom_selector_get_rom_data();
@@ -701,6 +704,7 @@ static void real_main(void)
 #endif
 
     if (rom_loaded) {
+        bool reset_requested = false;
         while (1) {
             /* Wait for vsync — Core 1 applies pending frame during vblank.
              * We wait for pending_pixels to become NULL to ensure we don't
@@ -728,7 +732,13 @@ static void real_main(void)
 
             /* Check for menu hotkey (Start+Select, F12) */
             if (settings_check_hotkey()) {
-                settings_menu_show(test_pixels);
+                settings_result_t result = settings_menu_show(test_pixels);
+                if (result == SETTINGS_RESULT_RESET) {
+                    qnes_close();
+                    g_rom_name[0] = '\0';
+                    reset_requested = true;
+                    break;
+                }
                 /* Restore game palette after menu */
                 update_palette(pal_write_idx);
                 pending_pal_idx = pal_write_idx;
@@ -809,8 +819,13 @@ static void real_main(void)
             pending_pixels = qnes_get_pixels();
 
         }
+        if (reset_requested) continue;
     } else {
         printf("No ROM loaded (no SD card ROM, no flash ROM).\n");
         while (1) { sleep_ms(100); }
     }
+
+    break;  /* no reset — should not reach here normally */
+
+    }  /* end outer while(1) loop */
 }

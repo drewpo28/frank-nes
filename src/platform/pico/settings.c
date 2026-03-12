@@ -63,6 +63,7 @@ typedef enum {
     MENU_SAVE_GAME,
     MENU_LOAD_GAME,
     MENU_SEPARATOR3,
+    MENU_RESET,
     MENU_EXIT,
     MENU_ITEM_COUNT
 } menu_item_t;
@@ -254,6 +255,7 @@ static const char *get_menu_label(menu_item_t item) {
         case MENU_VOLUME:    return "VOLUME";
         case MENU_SAVE_GAME: return (status_frames > 0) ? status_msg : "SAVE GAME";
         case MENU_LOAD_GAME: return save_exists ? "LOAD GAME" : "LOAD GAME (-)";
+        case MENU_RESET:     return "RESET EMULATOR";
         case MENU_EXIT:      return "EXIT";
         default:             return "";
     }
@@ -835,6 +837,20 @@ settings_result_t settings_menu_show(uint8_t *screen_buffer) {
                 g_settings = edit_settings;
                 settings_save();
                 break;  /* exit menu after loading state */
+            }
+            if (selected == MENU_RESET) {
+                g_settings = edit_settings;
+                settings_save();
+                /* Wait for buttons to be released before returning */
+                for (int i = 0; i < 60; i++) {
+                    menu_wait_vsync();
+                    audio_fill_silence(SAMPLE_RATE / 60);
+                    draw_settings_menu(screen_buffer, selected);
+                    pending_pitch = SCREEN_WIDTH;
+                    pending_pixels = screen_buffer;
+                    if (read_menu_buttons() == 0) break;
+                }
+                return SETTINGS_RESULT_RESET;
             }
             /* For value items, A/Start cycles forward */
             change_value((menu_item_t)selected, 1);

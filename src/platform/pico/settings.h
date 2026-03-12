@@ -43,6 +43,7 @@ extern settings_t g_settings;
 
 typedef enum {
     SETTINGS_RESULT_EXIT,
+    SETTINGS_RESULT_RESET,
 } settings_result_t;
 
 /**
