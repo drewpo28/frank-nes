@@ -825,11 +825,14 @@ bool rom_selector_show(long *out_rom_size) {
                             if (wr_off + rfsz > ROM_PSRAM_MAX) {
                                 wr_off = 0;  /* wrap to start */
                             }
-                            uint8_t *dst = (uint8_t *)(ROM_PSRAM_BASE + wr_off);
+                            /* Write via uncached PSRAM alias (0x15xxxxxx) so
+                             * the XIP cache stays full of Core 1's flash code
+                             * and HDMI output is not disrupted. Data lands in
+                             * PSRAM directly — no clean/flush needed. */
+                            uint8_t *dst = (uint8_t *)(0x15000000 + wr_off);
                             UINT rbr;
                             if (f_read(&rfil, dst, (UINT)rfsz, &rbr) == FR_OK
                                 && rbr == (UINT)rfsz) {
-                                xip_cache_clean_all();
                                 /* Invalidate preloaded ROMs whose data overlaps */
                                 uint32_t wr_end = wr_off + aligned_sz;
                                 for (int j = 0; j < rom_count; j++) {
