@@ -57,7 +57,7 @@ inline Nes_Ppu_Impl::cached_tile_t const& Nes_Ppu_Impl::get_bg_tile( int index )
 	// use index directly, since cached tile is same size as native tile
 	BOOST_STATIC_ASSERT( sizeof (cached_tile_t) == bytes_per_tile );
 	return *(Nes_Ppu_Impl::cached_tile_t*)
-			((uint8_t*) tile_cache + map_chr_addr( index * bytes_per_tile ));
+			((uint8_t*) tile_cache + map_chr_addr_bg( index * bytes_per_tile ));
 }
 
 // Fill

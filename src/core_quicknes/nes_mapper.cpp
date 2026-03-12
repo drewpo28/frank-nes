@@ -210,8 +210,19 @@ void Nes_Mapper::set_chr_bank( nes_addr_t addr, bank_size_t bs, int bank )
 
 void Nes_Mapper::set_chr_bank_ex( nes_addr_t addr, bank_size_t bs, int bank )
 {
-	emu().ppu.render_until( emu().clock() ); 
+	emu().ppu.render_until( emu().clock() );
 	emu().ppu.set_chr_bank_ex( addr, 1 << bs, bank << bs );
+}
+
+void Nes_Mapper::set_chr_bank_bg( nes_addr_t addr, bank_size_t bs, int bank )
+{
+	emu().ppu.render_until( emu().clock() );
+	emu().ppu.set_chr_bank_bg( addr, 1 << bs, bank << bs );
+}
+
+void Nes_Mapper::enable_mmc5_chr_split()
+{
+	emu().ppu.mmc5_chr_split = true;
 }
 
 void Nes_Mapper::mirror_manual( int page0, int page1, int page2, int page3 )

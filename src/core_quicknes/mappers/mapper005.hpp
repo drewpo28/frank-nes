@@ -188,11 +188,23 @@ public:
 			case 0x21:
 			case 0x22:
 			case 0x23:
+				set_chr_bank( (reg & 3) * 0x400, bank_1k, data );
+				break;
+
+			case 0x24:
+			case 0x25:
+			case 0x26:
+			case 0x27:
+				set_chr_bank( (reg & 3) * 0x400 + 0x1000, bank_1k, data );
+				break;
+
 			case 0x28:
 			case 0x29:
 			case 0x2a:
 			case 0x2b:
-				set_chr_bank( ((reg >> 1 & 4) + (reg & 3)) * 0x400, bank_1k, data );
+				/* BG banks: mirror across both 4K halves */
+				set_chr_bank_bg( (reg & 3) * 0x400, bank_1k, data );
+				set_chr_bank_bg( (reg & 3) * 0x400 + 0x1000, bank_1k, data );
 				break;
 			}
 		}
@@ -231,9 +243,11 @@ public:
 		static unsigned char list [] = {
 			0x05, 0x15, 0x16, 0x17,
 			0x20, 0x21, 0x22, 0x23,
+			0x24, 0x25, 0x26, 0x27,
 			0x28, 0x29, 0x2a, 0x2b
 		};
 
+		enable_mmc5_chr_split();
 		for ( int i = 0; i < (int) sizeof list; i++ )
 			write_intercepted( 0, regs_addr + list [i], regs [list [i]] );
 		intercept_writes( 0x5100, 0x200 );

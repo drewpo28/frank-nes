@@ -48,6 +48,8 @@ public:
 	void set_nt_banks( int bank0, int bank1, int bank2, int bank3 );
 	void set_chr_bank( int addr, int size, long data );
 	void set_chr_bank_ex( int addr, int size, long data );
+	void set_chr_bank_bg( int addr, int size, long data );
+	bool mmc5_chr_split;
 	
 	// Nametable and CHR RAM
 	enum { nt_ram_size = 0x1000 };
@@ -126,6 +128,12 @@ private:
 		mmc24_latched[page] |= newval1;
 
 		return ret;
+	}
+	long map_chr_addr_bg( unsigned a )
+	{
+		if ( mmc5_chr_split )
+			return chr_pages_ex [a / chr_page_size] + a;
+		return map_chr_addr( a );
 	}
 	uint8_t* nt_banks [4];
 

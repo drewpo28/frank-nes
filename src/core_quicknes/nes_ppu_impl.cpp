@@ -165,14 +165,29 @@ void Nes_Ppu_Impl::set_chr_bank_ex( int addr, int size, long data )
 
 	//check( !chr_is_writable || addr == data ); // to do: is CHR RAM ever bank-switched?
 	//dprintf( "Tried to set CHR RAM bank at %04X to CHR+%04X\n", addr, data );
-	
+
 	if ( data + size > chr_size )
 		data %= chr_size;
-	
+
 	int count = (unsigned) size / chr_page_size;
 	//assert( chr_page_size * count == size );
 	//assert( addr + size <= chr_addr_size );
-	
+
+	int page = (unsigned) addr / chr_page_size;
+	while ( count-- )
+	{
+		chr_pages_ex [page] = data - page * chr_page_size;
+		page++;
+		data += chr_page_size;
+	}
+}
+
+void Nes_Ppu_Impl::set_chr_bank_bg( int addr, int size, long data )
+{
+	if ( data + size > chr_size )
+		data %= chr_size;
+
+	int count = (unsigned) size / chr_page_size;
 	int page = (unsigned) addr / chr_page_size;
 	while ( count-- )
 	{
@@ -260,6 +275,7 @@ void Nes_Ppu_Impl::reset( bool full_reset )
 		memcpy( palette, initial_palette, sizeof palette );
 	}
 	
+	mmc5_chr_split = false;
 	set_nt_banks( 0, 0, 0, 0 );
 	set_chr_bank( 0, chr_addr_size, 0 );
 	memset( spr_ram, 0xff, sizeof spr_ram );
