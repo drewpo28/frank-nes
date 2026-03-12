@@ -424,69 +424,66 @@ static void load_rom_image(int idx) {
 /* Arrow section (between label bottom and base) */
 #define ARROW_Y   (LABEL_Y + LABEL_H + 6)
 
-static void draw_cartridge(int selected) {
-    fb_fill(PAL_BG);
+/* ─── Cartridge body drawing (position-parameterized) ─────────────── */
 
-    /* ── Main body fill ── */
-    fb_rect(CART_X, CART_Y, CART_W, CART_H, PAL_CART_BODY);
+static void draw_cart_at(int cx, int cy, int rom_idx) {
+    int base_y  = cy + CART_H - BASE_H;
+    int ridge_x = cx + LSTRIP_W + 1;
+    int label_x = ridge_x + RIDGE_W + 3;
+    int label_y = cy + 5;
+    int label_w = cx + CART_W - LSTRIP_W - 1 - label_x;
+    int label_h = base_y - 22 - label_y;
+    int arrow_y = label_y + label_h + 6;
 
-    /* ── Corner cuts ── */
-    /* Top: small 3x2 notches */
-    fb_rect(CART_X, CART_Y, 3, 2, PAL_BG);
-    fb_rect(CART_X + CART_W - 3, CART_Y, 3, 2, PAL_BG);
-    /* Bottom: large 9x15 grip notches */
-    fb_rect(CART_X, CART_Y + CART_H - 15, 9, 15, PAL_BG);
-    fb_rect(CART_X + CART_W - 9, CART_Y + CART_H - 15, 9, 15, PAL_BG);
+    /* Main body */
+    fb_rect(cx, cy, CART_W, CART_H, PAL_CART_BODY);
 
-    /* ── Outer edges ── */
-    /* Top edge highlight */
-    fb_hline(CART_X + 3, CART_Y, CART_W - 6, PAL_CART_LIGHT);
-    /* Left edge highlight (stops above bottom notch) */
-    fb_vline(CART_X, CART_Y + 2, CART_H - 17, PAL_CART_LIGHT);
-    /* Right edge shadow (stops above bottom notch) */
-    fb_vline(CART_X + CART_W - 1, CART_Y + 2, CART_H - 17, PAL_CART_DARK);
-    /* Bottom edge shadow (between notches) */
-    fb_hline(CART_X + 9, CART_Y + CART_H - 1, CART_W - 18, PAL_CART_DARK);
+    /* Corner cuts */
+    fb_rect(cx, cy, 3, 2, PAL_BG);
+    fb_rect(cx + CART_W - 3, cy, 3, 2, PAL_BG);
+    fb_rect(cx, cy + CART_H - 15, 9, 15, PAL_BG);
+    fb_rect(cx + CART_W - 9, cy + CART_H - 15, 9, 15, PAL_BG);
 
-    /* ── Left outer strip (narrow vertical bar) ── */
-    fb_vline(CART_X + LSTRIP_W, CART_Y + 2, CART_H - BASE_H - 2, PAL_CART_DARK);
+    /* Outer edges */
+    fb_hline(cx + 3, cy, CART_W - 6, PAL_CART_LIGHT);
+    fb_vline(cx, cy + 2, CART_H - 17, PAL_CART_LIGHT);
+    fb_vline(cx + CART_W - 1, cy + 2, CART_H - 17, PAL_CART_DARK);
+    fb_hline(cx + 9, cy + CART_H - 1, CART_W - 18, PAL_CART_DARK);
 
-    /* ── Ridge panel (horizontal vents on the left) ── */
-    int ridge_bottom = BASE_Y - 4;
-    int ridge_count = (ridge_bottom - RIDGE_TOP) / 5;
+    /* Left outer strip */
+    fb_vline(cx + LSTRIP_W, cy + 2, CART_H - BASE_H - 2, PAL_CART_DARK);
+
+    /* Ridge panel */
+    int ridge_top  = cy + 4;
+    int ridge_bot  = base_y - 4;
+    int ridge_count = (ridge_bot - ridge_top) / 5;
     for (int i = 0; i < ridge_count; i++) {
-        int ry = RIDGE_TOP + i * 5;
-        fb_hline(RIDGE_X, ry,     RIDGE_W, PAL_CART_RIDGE);
-        fb_hline(RIDGE_X, ry + 1, RIDGE_W, PAL_CART_DARK);
-        fb_hline(RIDGE_X, ry + 2, RIDGE_W, PAL_CART_BODY);
+        int ry = ridge_top + i * 5;
+        fb_hline(ridge_x, ry,     RIDGE_W, PAL_CART_RIDGE);
+        fb_hline(ridge_x, ry + 1, RIDGE_W, PAL_CART_DARK);
+        fb_hline(ridge_x, ry + 2, RIDGE_W, PAL_CART_BODY);
     }
 
-    /* ── Separator between ridges and label ── */
-    fb_vline(LABEL_X - 2, CART_Y + 3, CART_H - BASE_H - 5, PAL_CART_DARK);
-    fb_vline(LABEL_X - 1, CART_Y + 3, CART_H - BASE_H - 5, PAL_CART_LIGHT);
+    /* Separator */
+    fb_vline(label_x - 2, cy + 3, CART_H - BASE_H - 5, PAL_CART_DARK);
+    fb_vline(label_x - 1, cy + 3, CART_H - BASE_H - 5, PAL_CART_LIGHT);
 
-    /* ── Label area (dark background) ── */
-    fb_rect(LABEL_X, LABEL_Y, LABEL_W, LABEL_H, PAL_CART_LABEL);
-    /* Label border */
-    fb_hline(LABEL_X - 1, LABEL_Y - 1, LABEL_W + 2, PAL_CART_DARK);
-    fb_hline(LABEL_X - 1, LABEL_Y + LABEL_H, LABEL_W + 2, PAL_CART_DARK);
-    fb_vline(LABEL_X - 1, LABEL_Y - 1, LABEL_H + 2, PAL_CART_DARK);
-    fb_vline(LABEL_X + LABEL_W, LABEL_Y - 1, LABEL_H + 2, PAL_CART_DARK);
+    /* Label area — use lighter fill when no cover art */
+    bool has_img = (cur_img_pixels && cur_img_idx == rom_idx);
+    fb_rect(label_x, label_y, label_w, label_h, has_img ? PAL_CART_LABEL : PAL_CART_DARK);
+    fb_hline(label_x - 1, label_y - 1, label_w + 2, PAL_CART_DARK);
+    fb_hline(label_x - 1, label_y + label_h, label_w + 2, PAL_CART_DARK);
+    fb_vline(label_x - 1, label_y - 1, label_h + 2, PAL_CART_DARK);
+    fb_vline(label_x + label_w, label_y - 1, label_h + 2, PAL_CART_DARK);
 
-    /* ── Blit image into label (top-aligned, width-limited, no crop) ── */
-    if (cur_img_pixels && cur_img_idx == selected) {
+    /* Cover art or placeholder border */
+    if (cur_img_pixels && cur_img_idx == rom_idx) {
         int iw = cur_img_w;
         int ih = cur_img_h;
-        /* Scale to fit label width if needed */
-        if (iw > LABEL_W) {
-            ih = ih * LABEL_W / iw;
-            iw = LABEL_W;
-        }
-        if (ih > LABEL_H) ih = LABEL_H;
-
-        int ix = LABEL_X + (LABEL_W - iw) / 2;
-        int iy = LABEL_Y;
-
+        if (iw > label_w) { ih = ih * label_w / iw; iw = label_w; }
+        if (ih > label_h) ih = label_h;
+        int ix = label_x + (label_w - iw) / 2;
+        int iy = label_y;
         for (int y = 0; y < ih; y++) {
             int sy = y * cur_img_h / ih;
             for (int x = 0; x < iw; x++) {
@@ -495,35 +492,90 @@ static void draw_cartridge(int selected) {
                 fb_pixel(ix + x, iy + y, rgb555_to_pal(px));
             }
         }
+    } else {
+        /* No image: draw a dark gray inset border */
+        int m = 4;  /* margin inside label */
+        fb_hline(label_x + m, label_y + m, label_w - m * 2, PAL_CART_RIDGE);
+        fb_hline(label_x + m, label_y + label_h - m - 1, label_w - m * 2, PAL_CART_RIDGE);
+        fb_vline(label_x + m, label_y + m, label_h - m * 2, PAL_CART_RIDGE);
+        fb_vline(label_x + label_w - m - 1, label_y + m, label_h - m * 2, PAL_CART_RIDGE);
     }
 
-    /* ── Small triangle arrow below label ── */
-    int ax = LABEL_X + LABEL_W / 2;
-    int ay = ARROW_Y;
-    for (int row = 0; row < 5; row++) {
-        fb_hline(ax - (4 - row), ay + row, (4 - row) * 2 + 1, PAL_CART_DARK);
-    }
+    /* Arrow */
+    int ax = label_x + label_w / 2;
+    for (int row = 0; row < 5; row++)
+        fb_hline(ax - (4 - row), arrow_y + row, (4 - row) * 2 + 1, PAL_CART_DARK);
 
-    /* ── Base section divider ── */
-    fb_hline(CART_X + 1, BASE_Y, CART_W - 2, PAL_CART_DARK);
-    fb_hline(CART_X + 1, BASE_Y + 1, CART_W - 2, PAL_CART_LIGHT);
+    /* Base divider */
+    fb_hline(cx + 1, base_y, CART_W - 2, PAL_CART_DARK);
+    fb_hline(cx + 1, base_y + 1, CART_W - 2, PAL_CART_LIGHT);
+}
 
-    /* ── Title below cartridge ── */
+/* ─── UI text (fixed position, drawn separately from cart) ────────── */
+
+static void draw_selector_text(int selected) {
     const char *title = rom_meta[selected].title[0] ? rom_meta[selected].title : rom_list[selected].filename;
     char dt[40];
     int max_c = (SCREEN_W - 20) / 6;
     if (max_c > 39) max_c = 39;
     strncpy(dt, title, max_c);
     dt[max_c] = '\0';
-    fb_text_center(CART_Y + CART_H + 6, dt, PAL_WHITE);
+    fb_text_center(CART_Y + CART_H + 16, dt, PAL_WHITE);
 
-    /* Counter */
     char counter[16];
     snprintf(counter, sizeof(counter), "%d / %d", selected + 1, rom_count);
-    fb_text_center(CART_Y + CART_H + 20, counter, PAL_GRAY);
+    fb_text_center(CART_Y + CART_H + 30, counter, PAL_GRAY);
 
-    /* Nav hint */
     fb_text_center(SCREEN_H - 16, "< LEFT/RIGHT >   A: START", PAL_GRAY);
+}
+
+/* ─── Animation ───────────────────────────────────────────────────── */
+
+/* Idle float: gentle 2px sine bob, 36 frames (~0.6s period). */
+static int bounce_offset(uint32_t frame) {
+    int t = (int)(frame % 36);
+    if (t < 6) return 0;
+    if (t < 9) return 1;
+    if (t < 15) return 2;
+    if (t < 18) return 1;
+    if (t < 24) return 0;
+    if (t < 27) return -1;
+    if (t < 33) return -2;
+    return -1;
+}
+
+/* Scroll animation */
+#define SCROLL_FRAMES  8
+static int scroll_dir   = 0;  /* -1 = left, +1 = right, 0 = idle */
+static int scroll_frame = 0;
+static int scroll_from  = 0;  /* ROM index of outgoing cartridge */
+
+/* Ease-out: t*(2-t) mapped to 0..256 for t in 0..SCROLL_FRAMES */
+static int ease_out(int frame) {
+    int t = frame * 256 / SCROLL_FRAMES;
+    return t * (512 - t) / 256;
+}
+
+static void draw_scene(int selected, int bounce_idx) {
+    fb_fill(PAL_BG);
+
+    if (scroll_dir != 0 && scroll_frame < SCROLL_FRAMES) {
+        /* Scroll transition: old cart flies out, new cart slides in */
+        int progress = ease_out(scroll_frame);  /* 0..256 */
+        int travel = (SCREEN_W / 2 + CART_W);
+
+        int out_x = CART_X + (-scroll_dir * travel * progress / 256);
+        int in_x  = CART_X + (scroll_dir * travel * (256 - progress) / 256);
+
+        draw_cart_at(out_x, CART_Y, scroll_from);
+        draw_cart_at(in_x, CART_Y, selected);
+    } else {
+        /* Idle: gentle float */
+        int by = bounce_offset(bounce_idx);
+        draw_cart_at(CART_X, CART_Y + by, selected);
+    }
+
+    draw_selector_text(selected);
 }
 
 /* ─── Input ───────────────────────────────────────────────────────── */
@@ -677,11 +729,12 @@ bool rom_selector_show(long *out_rom_size) {
     bool sd_ok = (f_mount(&show_fs, "", 1) == FR_OK);
 
     int selected = 0;
-    int prev_selected = -1;
     int prev_buttons = 0;
     uint32_t hold_counter = 0;
-    bool needs_redraw = true;
+    uint32_t frame_count = 0;
     cur_img_idx = -1;
+    scroll_dir = 0;
+    scroll_frame = 0;
 
     /* Load first image before entering the loop */
     if (sd_ok) load_rom_image(0);
@@ -689,22 +742,29 @@ bool rom_selector_show(long *out_rom_size) {
     while (1) {
         selector_wait_vsync();
 
-        if (needs_redraw) {
-            /* Draw to back buffer (not being displayed) */
-            draw_cartridge(selected);
-            /* Swap buffers: the newly drawn buffer becomes the display buffer */
-            uint8_t *tmp = fb;
-            fb = fb_show;
-            fb_show = tmp;
-            needs_redraw = false;
-        }
+        /* Always redraw: bounce animation runs continuously */
+        draw_scene(selected, frame_count);
+        /* Swap double buffers */
+        uint8_t *tmp = fb;
+        fb = fb_show;
+        fb_show = tmp;
 
         audio_fill_silence(SAMPLE_RATE / 60);
         pending_pitch = SCREEN_W;
         pending_pixels = fb_show;
 
-        /* Input and SD I/O happen after posting — safe to block here
-         * without affecting the currently displayed frame. */
+        frame_count++;
+
+        /* Advance scroll animation */
+        if (scroll_dir != 0) {
+            scroll_frame++;
+            if (scroll_frame >= SCROLL_FRAMES) {
+                scroll_dir = 0;
+                scroll_frame = 0;
+            }
+        }
+
+        /* Input happens after posting */
         int buttons = read_selector_buttons();
         int pressed = buttons & ~prev_buttons;
         if (buttons != 0 && buttons == prev_buttons) {
@@ -716,25 +776,32 @@ bool rom_selector_show(long *out_rom_size) {
         }
         prev_buttons = buttons;
 
-        if (pressed & BTN_LEFT)
-            selected = (selected - 1 + rom_count) % rom_count;
-        if (pressed & BTN_RIGHT)
-            selected = (selected + 1) % rom_count;
+        /* Only accept new navigation when not mid-scroll */
+        if (scroll_dir == 0) {
+            if (pressed & BTN_LEFT) {
+                scroll_from = selected;
+                selected = (selected - 1 + rom_count) % rom_count;
+                scroll_dir = -1;
+                scroll_frame = 0;
+                if (sd_ok) load_rom_image(selected);
+            }
+            if (pressed & BTN_RIGHT) {
+                scroll_from = selected;
+                selected = (selected + 1) % rom_count;
+                scroll_dir = 1;
+                scroll_frame = 0;
+                if (sd_ok) load_rom_image(selected);
+            }
 
-        if (pressed & (BTN_A | BTN_START)) {
-            selected_rom_idx = selected;
-            set_rom_name(rom_list[selected].filename);
-            *out_rom_size = rom_list[selected].rom_size;
-            printf("Selected: %s (%ld bytes)\n",
-                   rom_list[selected].filename, rom_list[selected].rom_size);
-            f_unmount("");
-            return true;
-        }
-
-        if (selected != prev_selected) {
-            prev_selected = selected;
-            if (sd_ok) load_rom_image(selected);
-            needs_redraw = true;
+            if (pressed & (BTN_A | BTN_START)) {
+                selected_rom_idx = selected;
+                set_rom_name(rom_list[selected].filename);
+                *out_rom_size = rom_list[selected].rom_size;
+                printf("Selected: %s (%ld bytes)\n",
+                       rom_list[selected].filename, rom_list[selected].rom_size);
+                f_unmount("");
+                return true;
+            }
         }
     }
 }
