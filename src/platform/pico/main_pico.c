@@ -677,8 +677,11 @@ static void real_main(void)
         }
     }
 
-    /* Fallback: try loading first .nes from SD (no PSRAM / selector failed) */
-    if (!rom_loaded) {
+    /* Fallback: try loading first .nes from SD — only when selector was
+     * not available (no PSRAM or no ROMs found).  If the selector was shown
+     * but the chosen ROM failed to load, loop back instead of silently
+     * loading a different game (which also risks OOM). */
+    if (!rom_loaded && num_roms == 0) {
         long sd_rom_size = 0;
         uint8_t *sd_rom = try_load_rom_from_sd(&sd_rom_size);
         if (sd_rom) {
@@ -820,6 +823,10 @@ static void real_main(void)
 
         }
         if (reset_requested) continue;
+    } else if (num_roms > 0) {
+        /* Selector was available but load failed — loop back to selector */
+        printf("ROM load failed, returning to selector\n");
+        continue;
     } else {
         printf("No ROM loaded (no SD card ROM, no flash ROM).\n");
         while (1) { sleep_ms(100); }

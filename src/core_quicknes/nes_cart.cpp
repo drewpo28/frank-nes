@@ -157,25 +157,13 @@ const char * Nes_Cart::load_ines_data( const void* data, long size )
 	if ( p + prg_bytes + chr_bytes > (const uint8_t*) data + size )
 		return "ROM file too small";
 
-	/* Copy PRG into SRAM for fast 6502 instruction fetch when it fits.
-	   Pico SDK's malloc panics on failure, so check size first.
-	   Falls back to in-place (PSRAM/flash) for large ROMs. */
+	/* Keep PRG in-place (PSRAM/flash) — the XIP cache provides adequate
+	   hit rates for 6502 hot loops, and copying to SRAM would exhaust
+	   the limited ~77KB heap that the PPU and tile cache also need. */
 	prg_size_ = prg_bytes;
-	long prg_alloc = round_to_bank_size( prg_bytes ) + 2;
-	if ( prg_alloc <= 128 * 1024L ) {
-		prg_ = (uint8_t*) malloc( prg_alloc );
-	} else {
-		prg_ = NULL;
-	}
-	if ( prg_ ) {
-		memcpy( prg_, p, prg_bytes );
-		prg_owned_ = true;
-		printf("  PRG %ldKB -> SRAM\n", prg_bytes/1024);
-	} else {
-		prg_ = (uint8_t*) p;
-		prg_owned_ = false;
-		printf("  PRG %ldKB -> in-place\n", prg_bytes/1024);
-	}
+	prg_ = (uint8_t*) p;
+	prg_owned_ = false;
+	printf("  PRG %ldKB -> in-place\n", prg_bytes/1024);
 	p += prg_bytes;
 
 	/* CHR stays zero-copy — it is only accessed indirectly through the

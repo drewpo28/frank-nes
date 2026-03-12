@@ -670,12 +670,14 @@ int rom_selector_preload(long *out_rom_size) {
         char path[ROM_PATH_MAX];
         snprintf(path, sizeof(path), "/nes/%s", rom_list[i].filename);
         FIL fil;
-        if (f_open(&fil, path, FA_READ) == FR_OK) {
+        FRESULT fr = f_open(&fil, path, FA_READ);
+        if (fr == FR_OK) {
             FSIZE_t fsize = f_size(&fil);
             if (rom_data_offset + fsize <= ROM_PSRAM_MAX) {
                 uint8_t *dst = (uint8_t *)(ROM_PSRAM_BASE + rom_data_offset);
-                UINT br;
-                if (f_read(&fil, dst, (UINT)fsize, &br) == FR_OK && br == (UINT)fsize) {
+                UINT br = 0;
+                FRESULT rr = f_read(&fil, dst, (UINT)fsize, &br);
+                if (rr == FR_OK && br == (UINT)fsize) {
                     rom_list[i].rom_psram_offset = rom_data_offset;
                     rom_list[i].rom_size = (long)fsize;
                     rom_data_offset += (((uint32_t)fsize + 3) & ~3);  /* align */
@@ -683,11 +685,21 @@ int rom_selector_preload(long *out_rom_size) {
                            i, rom_list[i].filename,
                            (unsigned long)rom_list[i].rom_psram_offset,
                            (unsigned long)fsize);
+                } else {
+                    printf("ROM[%d] %s: read FAILED (fr=%d, got %u/%lu)\n",
+                           i, rom_list[i].filename,
+                           (int)rr, (unsigned)br, (unsigned long)fsize);
                 }
             } else {
-                printf("ROM[%d] %s: no PSRAM space left\n", i, rom_list[i].filename);
+                printf("ROM[%d] %s: no PSRAM space left (need %lu, have %lu)\n",
+                       i, rom_list[i].filename,
+                       (unsigned long)fsize,
+                       (unsigned long)(ROM_PSRAM_MAX - rom_data_offset));
             }
             f_close(&fil);
+        } else {
+            printf("ROM[%d] %s: open FAILED (fr=%d)\n",
+                   i, rom_list[i].filename, (int)fr);
         }
     }
 
@@ -794,6 +806,52 @@ bool rom_selector_show(long *out_rom_size) {
             }
 
             if (pressed & (BTN_A | BTN_START)) {
+                /* If preload missed this ROM, try loading it from SD now */
+                if (rom_list[selected].rom_size <= 0 && sd_ok) {
+                    char rpath[ROM_PATH_MAX];
+                    snprintf(rpath, sizeof(rpath), "/nes/%s",
+                             rom_list[selected].filename);
+                    FIL rfil;
+                    if (f_open(&rfil, rpath, FA_READ) == FR_OK) {
+                        FSIZE_t rfsz = f_size(&rfil);
+                        if (rfsz >= 16 && rfsz <= ROM_PSRAM_MAX) {
+                            uint8_t *dst = (uint8_t *)ROM_PSRAM_BASE;
+                            UINT rbr;
+                            if (f_read(&rfil, dst, (UINT)rfsz, &rbr) == FR_OK
+                                && rbr == (UINT)rfsz) {
+                                /* Flush dirty cache lines to PSRAM so the data
+                                 * survives xip_cache_invalidate_all() later. */
+                                xip_cache_clean_all();
+                                rom_list[selected].rom_psram_offset = 0;
+                                rom_list[selected].rom_size = (long)rfsz;
+                                printf("ROM '%s' loaded on-demand (%lu bytes)\n",
+                                       rom_list[selected].filename,
+                                       (unsigned long)rfsz);
+                            }
+                        }
+                        f_close(&rfil);
+                    }
+                }
+                if (rom_list[selected].rom_size <= 0) {
+                    printf("Selected: %s — load FAILED\n",
+                           rom_list[selected].filename);
+                    /* Brief on-screen error, then stay in selector */
+                    fb_fill(PAL_BG);
+                    fb_text_center(SCREEN_H / 2 - 4, "ROM FAILED TO LOAD", PAL_WHITE);
+                    fb_text_center(SCREEN_H / 2 + 10, "CHECK FILE ON SD CARD", PAL_GRAY);
+                    uint8_t *tmp2 = fb; fb = fb_show; fb_show = tmp2;
+                    selector_wait_vsync();
+                    audio_fill_silence(SAMPLE_RATE / 60);
+                    pending_pitch = SCREEN_W;
+                    pending_pixels = fb_show;
+                    for (int i = 0; i < 120; i++) {
+                        selector_wait_vsync();
+                        audio_fill_silence(SAMPLE_RATE / 60);
+                        pending_pitch = SCREEN_W;
+                        pending_pixels = fb_show;
+                    }
+                    continue;
+                }
                 selected_rom_idx = selected;
                 set_rom_name(rom_list[selected].filename);
                 *out_rom_size = rom_list[selected].rom_size;
