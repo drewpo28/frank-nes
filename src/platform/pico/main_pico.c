@@ -293,38 +293,8 @@ void __not_in_flash("scanline") scanline_callback(
     out[4] = 0; out[5] = 0; out[6] = 0; out[7] = 0;
 }
 
-/* Generate test pattern when no ROM is loaded */
+/* Pixel buffer — used by settings menu for rendering */
 uint8_t test_pixels[NES_WIDTH * NES_HEIGHT];
-
-static void generate_test_pattern(void)
-{
-    /* Simple color bars using direct RGB565 palette */
-    static const uint16_t bars[] = {
-        0xFFFF, 0xFFE0, 0x07FF, 0x07E0, 0xF81F, 0xF800, 0x001F, 0x0000
-    };
-    for (int i = 0; i < 256; i++) {
-        uint16_t c = bars[i % 8];
-        rgb565_palette_32[pal_write_idx][i] = c | ((uint32_t)c << 16);
-    }
-    pending_pal_idx = pal_write_idx;
-    pal_write_idx ^= 1;
-
-    for (int y = 0; y < NES_HEIGHT; y++) {
-        for (int x = 0; x < NES_WIDTH; x++) {
-            test_pixels[y * NES_WIDTH + x] = (x >> 5) % 8;
-        }
-    }
-
-    frame_pixels = test_pixels;
-    frame_pitch = NES_WIDTH;
-}
-
-static void error_loop(const char *msg)
-{
-    printf("ERROR: %s\n", msg);
-    generate_test_pattern();
-    while (1) { sleep_ms(16); }
-}
 
 /* Try to initialize PSRAM, returns true on success */
 static bool psram_available = false;
@@ -614,16 +584,6 @@ static void real_main(void)
 
     paint_stack();
 
-#if !USB_HID_ENABLED
-    /* Wait for USB serial console */
-    for (int i = 0; i < 50; i++) {
-        if (stdio_usb_connected()) break;
-        sleep_ms(100);
-    }
-#else
-    sleep_ms(500);
-#endif
-
     printf("\n=== murmnes (QuickNES) ===\n");
     printf("sys_clk: %lu Hz\n", (unsigned long)clock_get_hz(clk_sys));
 
@@ -837,7 +797,6 @@ static void real_main(void)
         }
     } else {
         printf("No ROM loaded (no SD card ROM, no flash ROM).\n");
-        generate_test_pattern();
         while (1) { sleep_ms(100); }
     }
 }
