@@ -102,7 +102,7 @@ const char *Nes_Ppu_Impl::open_chr( uint8_t const* new_chr, long chr_data_size )
 		extern void *qnes_get_tile_cache_buf(long *);
 		long ext_size = 0;
 		void *ext = qnes_get_tile_cache_buf( &ext_size );
-		if ( ext && ext_size >= cache_bytes && cache_bytes > 65536 )
+		if ( ext && ext_size >= cache_bytes )
 		{
 			tile_cache_mem = (uint8_t*) ext;
 			tile_cache_mem_ext = true;
