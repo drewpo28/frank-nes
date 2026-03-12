@@ -11,6 +11,7 @@
 #include "nespad.h"
 #include "ps2kbd_wrapper.h"
 #include "ff.h"
+#include "hardware/watchdog.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -246,6 +247,8 @@ static uint32_t crc32_file(FIL *fil, int skip) {
 typedef struct {
     char filename[64];
     uint32_t crc;
+    uint32_t rom_psram_offset;  /* offset from PSRAM_BASE where ROM is stored */
+    long rom_size;              /* ROM file size in bytes */
     bool crc_valid;
 } rom_entry_t;
 
@@ -564,62 +567,95 @@ static void selector_wait_vsync(void) {
     vsync_flag = 0;
 }
 
-/* Post current framebuffer and wait for vsync — keeps HDMI alive during loading */
-static void post_frame(void) {
-    selector_wait_vsync();
-    pending_pitch = SCREEN_W;
-    pending_pixels = fb;
+/* ─── Preload: ALL SD access before HDMI starts ───────────────────── */
+
+/* ROM files stored at PSRAM_BASE (0x11000000), packed sequentially.
+ * Max 2MB total for all ROMs (tile cache starts at 2MB offset). */
+#define ROM_PSRAM_BASE   0x11000000
+#define ROM_PSRAM_MAX    (2 * 1024 * 1024)
+static uint32_t rom_data_offset = 0;  /* running allocation for ROM files */
+
+static int selected_rom_idx = 0;
+
+void *rom_selector_get_rom_data(void) {
+    return (void *)(ROM_PSRAM_BASE + rom_list[selected_rom_idx].rom_psram_offset);
 }
 
-/* Show a loading screen with progress */
-static void draw_loading(int current, int total) {
-    fb_fill(PAL_BG);
-    fb_text_center(SCREEN_H / 2 - 10, "LOADING...", PAL_WHITE);
-    char progress[24];
-    snprintf(progress, sizeof(progress), "%d / %d", current, total);
-    fb_text_center(SCREEN_H / 2 + 4, progress, PAL_GRAY);
+static void set_rom_name(const char *filename) {
+    extern char g_rom_name[64];
+    size_t nlen = strlen(filename);
+    if (nlen >= 4) nlen -= 4;
+    if (nlen >= 64) nlen = 63;
+    memcpy(g_rom_name, filename, nlen);
+    g_rom_name[nlen] = '\0';
 }
 
-/* Pre-compute CRCs and load all metadata at startup (with loading screen) */
-static void preload_all_roms(void) {
-    psram_alloc_offset = 0;
-    for (int i = 0; i < rom_count; i++) {
-        draw_loading(i + 1, rom_count);
-        post_frame();
-        ensure_crc(i);
-        load_rom_metadata(i);
-    }
-}
-
-bool rom_selector_show(long *out_rom_size) {
-    fb = test_pixels;
-
-    /* Point rom_list and rom_meta into PSRAM */
+int rom_selector_preload(long *out_rom_size) {
+    *out_rom_size = 0;
     rom_list = (rom_entry_t *)ROMLIST_PSRAM_BASE;
     rom_meta = (rom_meta_t *)ROMMETA_PSRAM_BASE;
     memset(rom_list, 0, MAX_ROMS * sizeof(rom_entry_t));
     memset(rom_meta, 0, MAX_ROMS * sizeof(rom_meta_t));
 
     static FATFS sel_fs;
-    if (f_mount(&sel_fs, "", 1) != FR_OK) {
-        printf("ROM selector: SD mount failed\n");
-        return false;
-    }
+    if (f_mount(&sel_fs, "", 1) != FR_OK) return 0;
 
     int count = scan_roms();
     printf("ROM selector: found %d ROMs\n", count);
+    if (count == 0) { f_unmount(""); return 0; }
 
-    if (count == 0) {
-        f_unmount("");
-        return false;
+    /* Load ALL ROM files into PSRAM sequentially */
+    rom_data_offset = 0;
+    for (int i = 0; i < rom_count; i++) {
+        char path[ROM_PATH_MAX];
+        snprintf(path, sizeof(path), "/nes/%s", rom_list[i].filename);
+        FIL fil;
+        if (f_open(&fil, path, FA_READ) == FR_OK) {
+            FSIZE_t fsize = f_size(&fil);
+            if (rom_data_offset + fsize <= ROM_PSRAM_MAX) {
+                uint8_t *dst = (uint8_t *)(ROM_PSRAM_BASE + rom_data_offset);
+                UINT br;
+                if (f_read(&fil, dst, (UINT)fsize, &br) == FR_OK && br == (UINT)fsize) {
+                    rom_list[i].rom_psram_offset = rom_data_offset;
+                    rom_list[i].rom_size = (long)fsize;
+                    rom_data_offset += (((uint32_t)fsize + 3) & ~3);  /* align */
+                    printf("ROM[%d] %s -> PSRAM+%lu (%lu bytes)\n",
+                           i, rom_list[i].filename,
+                           (unsigned long)rom_list[i].rom_psram_offset,
+                           (unsigned long)fsize);
+                }
+            } else {
+                printf("ROM[%d] %s: no PSRAM space left\n", i, rom_list[i].filename);
+            }
+            f_close(&fil);
+        }
     }
 
-    /* Set up 6x6x6 palette */
+    /* CRCs + metadata */
+    psram_alloc_offset = 0;
+    for (int i = 0; i < rom_count; i++) {
+        ensure_crc(i);
+        load_rom_metadata(i);
+    }
+
+    /* For single ROM, pre-set the selection */
+    if (count == 1) {
+        selected_rom_idx = 0;
+        set_rom_name(rom_list[0].filename);
+        *out_rom_size = rom_list[0].rom_size;
+    }
+
+    f_unmount("");
+    return count;
+}
+
+/* ─── Show: pure display, ZERO SD card access ─────────────────────── */
+
+bool rom_selector_show(long *out_rom_size) {
+    fb = test_pixels;
     setup_selector_palette();
 
-    /* Pre-load all CRCs, titles, and images (shows loading screen) */
-    preload_all_roms();
-
+    /* Return the selected ROM index — ROM loading handled by caller */
     int selected = 0;
     int prev_selected = -1;
     int prev_buttons = 0;
@@ -645,55 +681,20 @@ bool rom_selector_show(long *out_rom_size) {
             selected = (selected + 1) % rom_count;
 
         if (pressed & (BTN_A | BTN_START)) {
-            /* Set ROM name */
-            extern char g_rom_name[64];
-            const char *fname = rom_list[selected].filename;
-            size_t nlen = strlen(fname);
-            if (nlen >= 4) nlen -= 4;
-            if (nlen >= sizeof(g_rom_name)) nlen = sizeof(g_rom_name) - 1;
-            memcpy(g_rom_name, fname, nlen);
-            g_rom_name[nlen] = '\0';
-
-            /* Show loading message while reading ROM from SD */
-            printf("Selected: %s\n", fname);
-            fb_fill(PAL_BG);
-            fb_text_center(SCREEN_H / 2 - 3, "LOADING...", PAL_WHITE);
-            post_frame();
-
-            /* Load ROM into PSRAM_BASE */
-            char rom_path[ROM_PATH_MAX];
-            snprintf(rom_path, sizeof(rom_path), "/nes/%s", fname);
-            printf("Opening %s...\n", rom_path);
-            FIL fil;
-            bool ok = false;
-            FRESULT fr = f_open(&fil, rom_path, FA_READ);
-            printf("f_open=%d\n", fr);
-            if (fr == FR_OK) {
-                FSIZE_t fsize = f_size(&fil);
-                printf("Reading %lu bytes into PSRAM...\n", (unsigned long)fsize);
-                uint8_t *rom_buf = (uint8_t *)0x11000000;  /* PSRAM_BASE */
-                UINT br;
-                FRESULT fr2 = f_read(&fil, rom_buf, (UINT)fsize, &br);
-                printf("f_read=%d br=%u\n", fr2, br);
-                if (fr2 == FR_OK && br == (UINT)fsize) {
-                    *out_rom_size = (long)fsize;
-                    ok = true;
-                    printf("ROM loaded OK\n");
-                } else {
-                    printf("ROM read FAILED\n");
-                }
-                f_close(&fil);
-            }
-
-            f_unmount("");
-            return ok;
+            selected_rom_idx = selected;
+            set_rom_name(rom_list[selected].filename);
+            *out_rom_size = rom_list[selected].rom_size;
+            printf("Selected: %s (%ld bytes)\n",
+                   rom_list[selected].filename, rom_list[selected].rom_size);
+            return true;
         }
 
         if (selected != prev_selected) {
             prev_selected = selected;
-            draw_cartridge(selected);  /* instant — all data in RAM/PSRAM */
+            draw_cartridge(selected);
         }
 
+        audio_fill_silence(SAMPLE_RATE / 60);
         pending_pitch = SCREEN_W;
         pending_pixels = fb;
     }

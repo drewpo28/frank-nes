@@ -35,6 +35,10 @@
 #include "i2s_audio.h"
 #include "uart_logging.h"
 #include "ff.h"
+#include "hardware/spi.h"
+#include "hardware/dma.h"
+#include "hardware/resets.h"
+#include "hardware/xip_cache.h"
 
 #if USB_HID_ENABLED
 #include "usbhid.h"
@@ -590,15 +594,29 @@ static void real_main(void)
 
     /* Provide PSRAM for tile cache (large CHR ROMs need ~256KB+) */
     if (psram_available) {
-        /* ROM lives at PSRAM_BASE (up to 2MB), tile cache after that */
-        void *tc = (void *)(0x11000000 + 2 * 1024 * 1024);
+        /* Tile cache in PSRAM via UNCACHED alias (0x15xxxxxx).
+         * Uncached access bypasses XIP cache, preventing cache pollution
+         * that disrupts HSTX DMA when writing tile data during HDMI output. */
+        void *tc = (void *)(0x15000000 + 2 * 1024 * 1024);
         qnes_set_tile_cache_buf(tc, 1 * 1024 * 1024);
     }
 
-    /* Load settings from SD card (uses defaults if not found) */
     settings_load();
 
-    /* Start HDMI — needed for ROM selector display */
+    /* Pre-load all ROM data from SD before HDMI starts */
+    int num_roms = 0;
+    long preloaded_rom_size = 0;
+    if (psram_available) {
+        num_roms = rom_selector_preload(&preloaded_rom_size);
+        /* PSRAM writes dirty the XIP cache — stale entries prevent HSTX
+         * from starting correctly. Invalidate before HDMI init. */
+        xip_cache_invalidate_all();
+    }
+
+    bool rom_loaded = false;
+    xip_cache_invalidate_all();
+
+    /* Start HDMI */
     frame_pixels = test_pixels;
     frame_pitch = NES_WIDTH;
 
@@ -642,57 +660,17 @@ static void real_main(void)
     printf("USB HID Host initialized\n");
 #endif
 
-    /* ─── ROM loading: selector menu or flash fallback ─────────── */
-    bool rom_loaded = false;
-
-    /* Show ROM selector if PSRAM is available (needed for image cache) */
-    if (psram_available) {
+    /* Show ROM selector */
+    if (!rom_loaded && num_roms > 0) {
         long rom_size = 0;
-        printf("Starting ROM selector...\n");
         if (rom_selector_show(&rom_size)) {
-            /* ROM is already in PSRAM at PSRAM_BASE.
-             * Keep posting the "LOADING..." screen from the selector
-             * while the emulator initializes (mapper ROMs take time). */
-            printf("ROM selected (%ld bytes), initializing emulator...\n", rom_size);
-
-            /* Post video-only frames to keep HDMI alive during init
-             * (no audio DI packets — flooding DI queue can break HSTX) */
-            for (int i = 0; i < 5; i++) {
-                while (pending_pixels != NULL) { __wfe(); }
-                vsync_flag = 0;
-                pending_pitch = NES_WIDTH;
-                pending_pixels = test_pixels;
-            }
-
-            sd_rom_buf = (uint8_t *)PSRAM_BASE;
-            printf("Calling qnes_load_rom_inplace...\n");
-            int ret = qnes_load_rom_inplace(sd_rom_buf, rom_size);
-            printf("qnes_load_rom_inplace returned %d\n", ret);
-
-            if (ret == 0) {
+            sd_rom_buf = (uint8_t *)rom_selector_get_rom_data();
+            printf("Initializing emulator (%ld bytes)...\n", rom_size);
+            if (qnes_load_rom_inplace(sd_rom_buf, rom_size) == 0) {
                 printf("Emulator initialized OK\n");
-
-                /* Emulate one frame immediately so the NES palette + pixels
-                 * are ready before entering the main loop. This ensures a
-                 * seamless handoff from the selector's palette to the game. */
-                qnes_emulate_frame(0, 0);
-                update_palette(pal_write_idx);
-                pending_pal_idx = pal_write_idx;
-                pal_write_idx ^= 1;
-
-                /* Post the first real game frame and wait for it to display */
-                while (pending_pixels != NULL) { __wfe(); }
-                pending_pitch = 272;
-                pending_pixels = qnes_get_pixels();
-                while (pending_pixels != NULL) { __wfe(); }
-
-                printf("First frame displayed, entering game loop\n");
                 rom_loaded = true;
-            } else {
-                printf("qnes_load_rom_inplace FAILED (%d)\n", ret);
+                xip_cache_invalidate_all();
             }
-        } else {
-            printf("ROM selector: no ROM selected\n");
         }
     }
 

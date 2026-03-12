@@ -17,17 +17,26 @@ extern "C" {
 #define ROM_PATH_MAX 280
 
 /**
- * Show the ROM selector menu. Scans /nes/ for .nes files,
- * displays cartridges with metadata images.
- *
- * On success, the selected ROM is loaded into PSRAM at PSRAM_BASE
- * and out_rom_size is set. The caller should use qnes_load_rom_inplace
- * on PSRAM_BASE directly (no re-read from SD needed).
- *
- * @param out_rom_size  Receives the size of the loaded ROM in bytes
- * @return true if a ROM was selected and loaded, false if no ROMs found
+ * Pre-load all ROM metadata from SD (CRCs, titles, images) and
+ * if only 1 ROM, load it into PSRAM too.
+ * Call BEFORE HDMI starts — SD card SPI conflicts with HSTX.
+ * @param out_rom_size  Set to ROM size if single ROM auto-loaded, else 0
+ * @return Number of ROMs found
+ */
+int rom_selector_preload(long *out_rom_size);
+
+/**
+ * Show the ROM selector UI (no SD access — all data in memory).
+ * Call AFTER HDMI starts.
+ * @param out_rom_size  Receives size of selected ROM in PSRAM
+ * @return true if ROM selected
  */
 bool rom_selector_show(long *out_rom_size);
+
+/**
+ * Get PSRAM pointer to the last selected/loaded ROM data.
+ */
+void *rom_selector_get_rom_data(void);
 
 #ifdef __cplusplus
 }
