@@ -740,7 +740,6 @@ settings_result_t settings_menu_show(uint8_t *screen_buffer) {
     int selected = MENU_PLAYER1;
 
     /* Auto-repeat state */
-    int prev_buttons = 0;
     uint32_t hold_counter = 0;
     const uint32_t REPEAT_DELAY = 10;
     const uint32_t REPEAT_RATE = 3;
@@ -755,6 +754,7 @@ settings_result_t settings_menu_show(uint8_t *screen_buffer) {
         pending_pitch = SCREEN_WIDTH;
         pending_pixels = screen_buffer;
     }
+    int prev_buttons = read_menu_buttons();  /* ignore any still-held buttons */
 
     while (1) {
         menu_wait_vsync();

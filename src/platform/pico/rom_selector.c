@@ -1038,7 +1038,7 @@ bool rom_selector_show(long *out_rom_size) {
     bool sd_ok = (f_mount(&show_fs, "", 1) == FR_OK);
 
     int selected = last_selected_rom;
-    int prev_buttons = 0;
+    int prev_buttons = read_selector_buttons();  /* ignore held buttons from previous screen */
     uint32_t hold_counter = 0;
     uint32_t frame_count = 0;
     cur_img_idx = -1;
@@ -1409,6 +1409,15 @@ void welcome_screen_show(void) {
         /* Auto-continue after 10 seconds */
         if (frame >= 600)
             break;
+    }
+
+    /* Wait for buttons to be released before proceeding */
+    for (int i = 0; i < 60; i++) {
+        selector_wait_vsync();
+        if (read_selector_buttons() == 0) break;
+        audio_fill_silence(SAMPLE_RATE / 60);
+        pending_pitch = SCREEN_W;
+        pending_pixels = fb_show;
     }
 }
 
