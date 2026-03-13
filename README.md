@@ -113,7 +113,7 @@ MurmNES requires 8MB PSRAM to run the ROM selector. Without PSRAM, only a single
 1. Format an SD card as **FAT32**
 2. Create a `nes` directory in the root
 3. Copy `.nes` ROM files into the `nes/` directory
-4. (Optional) Copy game metadata for cover art and game info -- see [Metadata](#game-metadata) below
+4. (Optional) Copy game metadata for cover art and game info -- extract `sdcard/metadata.zip` to your SD card's `nes/` directory
 5. Insert the SD card and power on the device
 
 ### First Boot and Caching
