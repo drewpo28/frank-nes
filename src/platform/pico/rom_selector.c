@@ -1,5 +1,5 @@
 /*
- * MurmNES - ROM Selector Menu
+ * FRANK NES - ROM Selector Menu
  * Displays cartridges with cover art from SD card metadata.
  * Uses 8-bit indexed mode with a fixed 6x6x6 RGB color cube palette.
  * SPDX-License-Identifier: MIT
@@ -1345,9 +1345,9 @@ void welcome_screen_show(void) {
     fb_show = sel_backbuf;
     setup_welcome_palette();
 
-#ifdef MURMNES_VERSION
+#ifdef FRANK_NES_VERSION
     char version_str[16];
-    snprintf(version_str, sizeof(version_str), "V%s", MURMNES_VERSION);
+    snprintf(version_str, sizeof(version_str), "V%s", FRANK_NES_VERSION);
 #else
     const char *version_str = "V1.00";
 #endif
@@ -1373,7 +1373,7 @@ void welcome_screen_show(void) {
         draw_logo_3x(logo_x, logo_y);
 
         /* Text */
-        fb_text_center(118, "MURMNES", PAL_WHITE);
+        fb_text_center(118, "FRANK NES", PAL_WHITE);
         fb_text_center(132, version_str, PAL_GRAY);
 
         fb_text_center(152, "BY MIKHAIL MATVEEV", PAL_GRAY);

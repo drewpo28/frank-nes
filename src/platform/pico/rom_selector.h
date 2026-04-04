@@ -1,5 +1,5 @@
 /*
- * MurmNES - ROM Selector Menu
+ * FRANK NES - ROM Selector Menu
  * Displays cartridges with cover art from SD card metadata.
  * SPDX-License-Identifier: MIT
  */

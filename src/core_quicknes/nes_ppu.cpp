@@ -4,8 +4,8 @@
  * https://github.com/libretro/QuickNES_Core
  * SPDX-License-Identifier: LGPL-2.1-or-later
  *
- * Fork maintained as part of MurmNES by Mikhail Matveev.
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * Fork maintained as part of FRANK NES by Mikhail Matveev.
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  */
 
 #include "nes_ppu.h"

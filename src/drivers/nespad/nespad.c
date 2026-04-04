@@ -4,8 +4,8 @@
  * https://github.com/fhoedemakers/pico-infonesPlus
  * SPDX-License-Identifier: MIT
  *
- * Fork maintained as part of MurmNES by Mikhail Matveev.
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * Fork maintained as part of FRANK NES by Mikhail Matveev.
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  */
 
 #include "nespad.h"

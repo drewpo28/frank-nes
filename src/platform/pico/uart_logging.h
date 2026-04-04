@@ -1,5 +1,5 @@
 /*
- * MurmNES - Lightweight UART logging (TX-only, no stdio/mutex overhead)
+ * FRANK NES - Lightweight UART logging (TX-only, no stdio/mutex overhead)
  * Bypasses Pico SDK stdio layer to avoid spinlock contention with HDMI DMA.
  */
 

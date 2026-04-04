@@ -1,7 +1,7 @@
 /*
- * MurmNES - NES Emulator for RP2350
+ * FRANK NES - NES Emulator for RP2350
  * Copyright (c) 2026 Mikhail Matveev <xtreme@rh1.tech>
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  * SPDX-License-Identifier: MIT
  */
 
@@ -579,7 +579,7 @@ static void real_main(void)
 
     paint_stack();
 
-    printf("\n=== murmnes (QuickNES) ===\n");
+    printf("\n=== frank-nes (QuickNES) ===\n");
     printf("sys_clk: %lu Hz\n", (unsigned long)clock_get_hz(clk_sys));
 
     /* Init PSRAM early — operator new/realloc redirect to PSRAM */

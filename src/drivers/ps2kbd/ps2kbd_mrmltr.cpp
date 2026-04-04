@@ -3,8 +3,8 @@
  * Original author: mrmltr
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * Fork maintained as part of MurmNES by Mikhail Matveev.
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * Fork maintained as part of FRANK NES by Mikhail Matveev.
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  */
 
 #include "ps2kbd_mrmltr.h"

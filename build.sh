@@ -32,4 +32,4 @@ cmake $CMAKE_OPTS ../src/platform/pico
 make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
 echo ""
-echo "Build complete. Firmware: build/murmnes.uf2"
+echo "Build complete. Firmware: build/frank-nes.uf2"

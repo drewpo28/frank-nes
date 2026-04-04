@@ -7,8 +7,8 @@
  * MMC5 rewritten with run_until() scanline simulation and proper
  * $5204 read support. Fixes Castlevania III (E) story scroll freeze.
  *
- * Fork maintained as part of MurmNES by Mikhail Matveev.
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * Fork maintained as part of FRANK NES by Mikhail Matveev.
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  */
 
 #pragma once

@@ -4,7 +4,7 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 
 include(${CMAKE_CURRENT_LIST_DIR}/../../../pico_sdk_import.cmake)
 
-project(murmnes C CXX ASM)
+project(frank-nes C CXX ASM)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -73,7 +73,7 @@ set(EMU2413_SOURCES
     ${EMU2413DIR}/emu2413_state.cpp
 )
 
-add_executable(murmnes
+add_executable(frank-nes
     ${PICODIR}/main_pico.c
     ${PICODIR}/settings.c
     ${PICODIR}/rom_selector.c
@@ -86,9 +86,9 @@ add_executable(murmnes
 )
 
 # Generate PIO header for I2S audio
-pico_generate_pio_header(murmnes ${DRIVERSDIR}/i2s/audio_i2s.pio)
+pico_generate_pio_header(frank-nes ${DRIVERSDIR}/i2s/audio_i2s.pio)
 
-target_include_directories(murmnes PRIVATE
+target_include_directories(frank-nes PRIVATE
     ${PICODIR}
     ${COREDIR}
     ${EMU2413DIR}
@@ -99,7 +99,7 @@ target_include_directories(murmnes PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_compile_definitions(murmnes PRIVATE
+target_compile_definitions(frank-nes PRIVATE
     PICO_CORE1_STACK_SIZE=0xC00
     PICO_STACK_SIZE=0x1000
     NDEBUG
@@ -114,7 +114,7 @@ target_compile_definitions(murmnes PRIVATE
 # C++ flags: no exceptions, no RTTI (saves flash/RAM)
 # -mno-unaligned-access: QuickNES casts byte* to uint32_t* for tile cache,
 # which can produce misaligned pointers. LDRD faults on unaligned on Cortex-M33.
-target_compile_options(murmnes PRIVATE
+target_compile_options(frank-nes PRIVATE
     -O2
     -mno-unaligned-access
     $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
@@ -123,7 +123,7 @@ target_compile_options(murmnes PRIVATE
     -Wno-unused-parameter
 )
 
-target_link_libraries(murmnes
+target_link_libraries(frank-nes
     pico_stdlib
     pico_multicore
     hardware_clocks
@@ -139,11 +139,11 @@ target_link_libraries(murmnes
 )
 
 if(USB_HID_ENABLED)
-    target_link_libraries(murmnes usbhid)
+    target_link_libraries(frank-nes usbhid)
 endif()
-pico_enable_stdio_usb(murmnes 0)
-pico_enable_stdio_uart(murmnes 0)
-target_link_libraries(murmnes hardware_uart)
+pico_enable_stdio_usb(frank-nes 0)
+pico_enable_stdio_uart(frank-nes 0)
+target_link_libraries(frank-nes hardware_uart)
 
 # Optional: embed NES ROM into flash
 if(DEFINED NES_ROM_PATH)
@@ -169,19 +169,19 @@ if(DEFINED NES_ROM_PATH)
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     )
 
-    target_sources(murmnes PRIVATE ${ROM_OBJ})
-    target_compile_definitions(murmnes PRIVATE HAS_NES_ROM)
+    target_sources(frank-nes PRIVATE ${ROM_OBJ})
+    target_compile_definitions(frank-nes PRIVATE HAS_NES_ROM)
 
-    target_link_options(murmnes PRIVATE
+    target_link_options(frank-nes PRIVATE
         -Wl,--defsym=nes_rom_data=_binary_nes_rom_bin_start
         -Wl,--defsym=nes_rom_end=_binary_nes_rom_bin_end
     )
 endif()
 
 # Read version from version.txt (format: "MAJOR MINOR", e.g. "1 00" -> "1.00")
-file(READ "${PROJECT_ROOT}/version.txt" MURMNES_VERSION_RAW)
-string(STRIP "${MURMNES_VERSION_RAW}" MURMNES_VERSION_RAW)
-string(REPLACE " " "." MURMNES_VERSION_STR "${MURMNES_VERSION_RAW}")
-target_compile_definitions(murmnes PRIVATE MURMNES_VERSION="${MURMNES_VERSION_STR}")
+file(READ "${PROJECT_ROOT}/version.txt" FRANK_NES_VERSION_RAW)
+string(STRIP "${FRANK_NES_VERSION_RAW}" FRANK_NES_VERSION_RAW)
+string(REPLACE " " "." FRANK_NES_VERSION_STR "${FRANK_NES_VERSION_RAW}")
+target_compile_definitions(frank-nes PRIVATE FRANK_NES_VERSION="${FRANK_NES_VERSION_STR}")
 
-pico_add_extra_outputs(murmnes)
+pico_add_extra_outputs(frank-nes)

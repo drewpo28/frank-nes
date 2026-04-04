@@ -1,5 +1,5 @@
 /*
- * MurmNES - I2S Audio Driver
+ * FRANK NES - I2S Audio Driver
  * Chained double-buffer DMA via PIO0
  * Adapted from murmgenesis audio driver.
  * SPDX-License-Identifier: MIT

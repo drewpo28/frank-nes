@@ -1,7 +1,7 @@
 /*
- * MurmNES - NES Emulator for RP2350
+ * FRANK NES - NES Emulator for RP2350
  * Copyright (c) 2026 Mikhail Matveev <xtreme@rh1.tech>
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  * SPDX-License-Identifier: MIT
  */
 
@@ -9,7 +9,7 @@
 #define BOARD_CONFIG_H
 
 /*
- * murmnes M2 Board Configuration
+ * frank-nes M2 Board Configuration
  *
  * HDMI: GPIO 12-19 (HSTX)
  * SD:   CLK=6, CMD=7, DAT0=4, DAT3=5

@@ -1,8 +1,8 @@
 /*
- * MurmNES - NES Emulator for RP2350
+ * FRANK NES - NES Emulator for RP2350
  * Settings Menu Implementation
  * Copyright (c) 2026 Mikhail Matveev <xtreme@rh1.tech>
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  * SPDX-License-Identifier: MIT
  */
 
@@ -672,7 +672,7 @@ void settings_save(void) {
 
     char buf[256];
     snprintf(buf, sizeof(buf),
-        "; MurmNES Settings\n"
+        "; FRANK NES Settings\n"
         "player1 = %s\n"
         "player2 = %s\n"
         "audio = %s\n"

@@ -4,8 +4,8 @@
  * Modified for VRC7 by xodnizel
  * https://github.com/libretro/QuickNES_Core
  *
- * Fork maintained as part of MurmNES by Mikhail Matveev.
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * Fork maintained as part of FRANK NES by Mikhail Matveev.
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  */
 
 #ifndef EMU2413_H

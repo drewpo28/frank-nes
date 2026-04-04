@@ -1,7 +1,7 @@
 /*
- * MurmNES - NES Emulator for RP2350
+ * FRANK NES - NES Emulator for RP2350
  * Originally from pico_hdmi by fliperama86 (https://github.com/fliperama86/pico_hdmi)
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  * SPDX-License-Identifier: Unlicense
  */
 

@@ -3,8 +3,8 @@
  * Based on TinyUSB HID host example
  * SPDX-License-Identifier: MIT
  *
- * Fork maintained as part of MurmNES by Mikhail Matveev.
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * Fork maintained as part of FRANK NES by Mikhail Matveev.
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  */
 
 #include "tusb.h"

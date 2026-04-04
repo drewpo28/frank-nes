@@ -1,8 +1,11 @@
 #!/bin/bash
 #
-# release.sh - Build release firmware for murmnes (M2 platform)
+# release.sh - Build release firmware for frank-nes (M2 platform)
 #
-# Output format: murmnes_A_BB.uf2
+# Usage: ./release.sh [VERSION]
+#   VERSION  - version string (e.g. "1.01"), prompted interactively if omitted
+#
+# Output format: frank-nes_A_BB.uf2
 #   A  = Major version
 #   BB = Minor version (zero-padded)
 #
@@ -41,15 +44,22 @@ fi
 # Interactive version input
 echo ""
 echo -e "${CYAN}┌─────────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${CYAN}│                     murmnes Release Builder                     │${NC}"
+echo -e "${CYAN}│                     frank-nes Release Builder                   │${NC}"
 echo -e "${CYAN}└─────────────────────────────────────────────────────────────────┘${NC}"
 echo ""
 echo -e "Last version: ${YELLOW}${LAST_MAJOR}.$(printf '%02d' $LAST_MINOR)${NC}"
 echo ""
 
 DEFAULT_VERSION="${NEXT_MAJOR}.$(printf '%02d' $NEXT_MINOR)"
-read -p "Enter version [default: $DEFAULT_VERSION]: " INPUT_VERSION
-INPUT_VERSION=${INPUT_VERSION:-$DEFAULT_VERSION}
+
+# Accept version from command line or prompt interactively
+if [[ -n "$1" ]]; then
+    INPUT_VERSION="$1"
+    echo -e "Version (from command line): ${CYAN}${INPUT_VERSION}${NC}"
+else
+    read -p "Enter version [default: $DEFAULT_VERSION]: " INPUT_VERSION
+    INPUT_VERSION=${INPUT_VERSION:-$DEFAULT_VERSION}
+fi
 
 # Parse version (handle both "1.00" and "1 00" formats)
 if [[ "$INPUT_VERSION" == *"."* ]]; then
@@ -73,10 +83,11 @@ if [[ $MINOR -lt 0 || $MINOR -ge 100 ]]; then
     exit 1
 fi
 
-# Format version string
+# Format version strings
 VERSION="${MAJOR}_$(printf '%02d' $MINOR)"
+VERSION_DOT="${MAJOR}.$(printf '%02d' $MINOR)"
 echo ""
-echo -e "${GREEN}Building release version: ${MAJOR}.$(printf '%02d' $MINOR)${NC}"
+echo -e "${GREEN}Building release version: ${VERSION_DOT}${NC}"
 
 # Save new version
 echo "$MAJOR $MINOR" > "$VERSION_FILE"
@@ -86,7 +97,7 @@ RELEASE_DIR="$SCRIPT_DIR/release"
 mkdir -p "$RELEASE_DIR"
 
 # Output filename
-OUTPUT_NAME="murmnes_${VERSION}.uf2"
+OUTPUT_NAME="frank-nes_${VERSION}.uf2"
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -104,14 +115,16 @@ cmake ../src/platform/pico -DUSB_HID_ENABLED=ON -DENABLE_LOGGING=0 > /dev/null 2
 # Build
 if make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) > /dev/null 2>&1; then
     # Copy UF2 to release directory
-    if [[ -f "murmnes.uf2" ]]; then
-        cp "murmnes.uf2" "$RELEASE_DIR/$OUTPUT_NAME"
+    if [[ -f "frank-nes.uf2" ]]; then
+        cp "frank-nes.uf2" "$RELEASE_DIR/$OUTPUT_NAME"
         echo -e "  ${GREEN}✓ Success${NC} → release/$OUTPUT_NAME"
     else
         echo -e "  ${RED}✗ UF2 not found${NC}"
+        exit 1
     fi
 else
     echo -e "  ${RED}✗ Build failed${NC}"
+    exit 1
 fi
 
 cd "$SCRIPT_DIR"
@@ -127,4 +140,16 @@ echo "Release file: $RELEASE_DIR/$OUTPUT_NAME"
 echo ""
 ls -la "$RELEASE_DIR/$OUTPUT_NAME" 2>/dev/null | awk '{print "  " $9 " (" $5 " bytes)"}'
 echo ""
-echo -e "Version: ${CYAN}${MAJOR}.$(printf '%02d' $MINOR)${NC}"
+echo -e "Version: ${CYAN}${VERSION_DOT}${NC}"
+
+# Create GitHub release and upload UF2
+TAG="v${VERSION_DOT}"
+echo ""
+echo -e "${CYAN}Creating GitHub release: ${TAG}${NC}"
+if gh release create "$TAG" "$RELEASE_DIR/$OUTPUT_NAME" \
+    --title "Version ${VERSION_DOT}" \
+    --generate-notes; then
+    echo -e "${GREEN}✓ GitHub release created: ${TAG}${NC}"
+else
+    echo -e "${YELLOW}⚠ GitHub release failed (you can upload manually)${NC}"
+fi

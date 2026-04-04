@@ -3,8 +3,8 @@
  * Original author: Elehobica (2020-2021)
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Fork maintained as part of MurmNES by Mikhail Matveev.
- * https://rh1.tech | https://github.com/rh1tech/murmnes
+ * Fork maintained as part of FRANK NES by Mikhail Matveev.
+ * https://rh1.tech | https://github.com/rh1tech/frank-nes
  */
 
 #ifndef _SDCARD_H_
