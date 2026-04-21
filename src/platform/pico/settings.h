@@ -32,11 +32,16 @@
 #define VOLUME_MAX  100
 #define VOLUME_STEP 10
 
+// ROM selector view mode
+#define SELECTOR_MODE_CAROUSEL 0
+#define SELECTOR_MODE_BROWSER  1
+
 typedef struct {
-    uint8_t p1_mode;      // Player 1 input mode (INPUT_MODE_*)
-    uint8_t p2_mode;      // Player 2 input mode (INPUT_MODE_*)
-    uint8_t audio_mode;   // Audio output (AUDIO_MODE_*)
-    uint8_t volume;       // Master volume 0-100
+    uint8_t p1_mode;        // Player 1 input mode (INPUT_MODE_*)
+    uint8_t p2_mode;        // Player 2 input mode (INPUT_MODE_*)
+    uint8_t audio_mode;     // Audio output (AUDIO_MODE_*)
+    uint8_t volume;         // Master volume 0-100
+    uint8_t selector_mode;  // ROM selector view (SELECTOR_MODE_*)
 } settings_t;
 
 extern settings_t g_settings;

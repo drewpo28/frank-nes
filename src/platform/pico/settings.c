@@ -50,7 +50,21 @@ extern void audio_fill_silence(int count);
 #define PAL_BG      1
 #define PAL_WHITE   2
 #define PAL_YELLOW  3
-#define PAL_GRAY    4
+#define PAL_GRAY       4
+#define PAL_DARKGRAY   5
+#define PAL_THUMB_BASE 6
+
+/* Save slot constants */
+#define NUM_SLOTS  6
+#define SLOT_COLS  3
+#define SLOT_ROWS  2
+#define THUMB_W    64
+#define THUMB_H    60
+#define THUMB_SIZE (THUMB_W * THUMB_H)
+#define SAVE_MAGIC "FNS1"
+#define SAVE_MAGIC_LEN 4
+#define SAVE_HEADER_SIZE (SAVE_MAGIC_LEN + THUMB_SIZE)
+#define QNES_PIXEL_PITCH 272
 
 /* Menu items */
 typedef enum {
@@ -68,8 +82,9 @@ typedef enum {
     MENU_ITEM_COUNT
 } menu_item_t;
 
-/* Whether a save file exists for the current ROM */
-static bool save_exists = false;
+/* Per-slot state */
+static bool slot_exists[NUM_SLOTS];
+static bool any_save_exists = false;
 
 /* Temporary status message shown after save/load (countdown in frames) */
 static const char *status_msg = NULL;
@@ -87,6 +102,7 @@ settings_t g_settings = {
     .p2_mode = INPUT_MODE_DISABLED,
     .audio_mode = AUDIO_MODE_HDMI,
     .volume = 100,
+    .selector_mode = SELECTOR_MODE_CAROUSEL,
 };
 
 /* Local copy for editing */
@@ -229,7 +245,7 @@ static const char *get_menu_label(menu_item_t item) {
         case MENU_AUDIO:     return "AUDIO";
         case MENU_VOLUME:    return "VOLUME";
         case MENU_SAVE_GAME: return (status_frames > 0) ? status_msg : "SAVE GAME";
-        case MENU_LOAD_GAME: return save_exists ? "LOAD GAME" : "LOAD GAME (-)";
+        case MENU_LOAD_GAME: return "LOAD GAME";
         case MENU_RESET:     return "BACK TO ROM SELECTOR";
         case MENU_EXIT:      return "BACK TO GAME";
         default:             return "";
@@ -239,7 +255,7 @@ static const char *get_menu_label(menu_item_t item) {
 static bool is_selectable(menu_item_t item) {
     if (item == MENU_SEPARATOR1 || item == MENU_SEPARATOR2 || item == MENU_SEPARATOR3)
         return false;
-    if (item == MENU_LOAD_GAME && !save_exists)
+    if (item == MENU_LOAD_GAME && !any_save_exists)
         return false;
     return true;
 }
@@ -357,7 +373,7 @@ static void draw_settings_menu(uint8_t *screen, int selected) {
         }
 
         uint8_t color;
-        if (item == MENU_LOAD_GAME && !save_exists)
+        if (item == MENU_LOAD_GAME && !any_save_exists)
             color = PAL_GRAY;
         else
             color = (i == selected) ? PAL_YELLOW : PAL_WHITE;
@@ -413,6 +429,18 @@ static void setup_menu_palette(void) {
     /* Gray */
     uint16_t gray = ((0x80 & 0xF8) << 8) | ((0x80 & 0xFC) << 3) | (0x80 >> 3);
     pal[PAL_GRAY] = gray | ((uint32_t)gray << 16);
+
+    /* Dark gray for empty slots */
+    uint16_t dg = ((0x20 & 0xF8) << 8) | ((0x20 & 0xFC) << 3) | (0x20 >> 3);
+    pal[PAL_DARKGRAY] = dg | ((uint32_t)dg << 16);
+
+    /* NES base colors for thumbnails (indices PAL_THUMB_BASE..PAL_THUMB_BASE+63) */
+    const qnes_rgb_t *ctab = qnes_get_color_table();
+    for (int i = 0; i < 64; i++) {
+        qnes_rgb_t c = ctab[i];
+        uint16_t c565 = ((c.r & 0xF8) << 8) | ((c.g & 0xFC) << 3) | (c.b >> 3);
+        pal[PAL_THUMB_BASE + i] = c565 | ((uint32_t)c565 << 16);
+    }
 
     pending_pal_idx = pal_write_idx;
     pal_write_idx ^= 1;
@@ -484,52 +512,125 @@ static int read_menu_buttons(void) {
 /* Shared FATFS instance to save ~1.1KB of static SRAM */
 static FATFS shared_fs;
 
-static void get_save_path(char *path, size_t path_size) {
-    snprintf(path, path_size, "/nes/.save/%s.sav", g_rom_name);
+static void get_save_path(char *path, size_t path_size, int slot) {
+    snprintf(path, path_size, "/nes/.save/%s.%d.sav", g_rom_name, slot);
 }
 
-static bool check_save_exists(void) {
-    if (g_rom_name[0] == '\0') {
-        printf("check_save: no rom name\n");
-        return false;
-    }
-
-    char path[128];
-    get_save_path(path, sizeof(path));
-    printf("check_save: path=%s\n", path);
-
-    
-    FRESULT fr = f_mount(&shared_fs, "", 1);
-    if (fr != FR_OK) {
-        printf("check_save: mount failed (%d)\n", fr);
-        return false;
-    }
+static void migrate_legacy_save(void) {
+    char old_path[128], new_path[128];
+    snprintf(old_path, sizeof(old_path), "/nes/.save/%s.sav", g_rom_name);
+    get_save_path(new_path, sizeof(new_path), 0);
 
     FILINFO fno;
-    bool exists = (f_stat(path, &fno) == FR_OK);
+    if (f_stat(old_path, &fno) == FR_OK && f_stat(new_path, &fno) != FR_OK) {
+        f_rename(old_path, new_path);
+        printf("migrate: %s -> %s\n", old_path, new_path);
+    }
+}
+
+static void scan_save_slots(void) {
+    any_save_exists = false;
+    memset(slot_exists, 0, sizeof(slot_exists));
+
+    if (g_rom_name[0] == '\0') return;
+
+    FRESULT fr = f_mount(&shared_fs, "", 1);
+    if (fr != FR_OK) return;
+
+    migrate_legacy_save();
+
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        char path[128];
+        get_save_path(path, sizeof(path), i);
+        FILINFO fno;
+        if (f_stat(path, &fno) == FR_OK) {
+            slot_exists[i] = true;
+            any_save_exists = true;
+        }
+    }
+
     f_unmount("");
-    printf("check_save: exists=%d\n", exists);
-    return exists;
+}
+
+static void write_thumbnail_to_file(FIL *file) {
+    const uint8_t *pixels = qnes_get_pixels();
+    const int16_t *pal;
+    int pal_size;
+    pal = qnes_get_palette(&pal_size);
+    UINT bw;
+    uint8_t row[THUMB_W];
+
+    for (int ty = 0; ty < THUMB_H; ty++) {
+        int src_y = ty * SCREEN_HEIGHT / THUMB_H;
+        if (pixels) {
+            for (int tx = 0; tx < THUMB_W; tx++) {
+                int src_x = tx * SCREEN_WIDTH / THUMB_W;
+                uint8_t idx = pixels[src_y * QNES_PIXEL_PITCH + src_x];
+                int16_t nes_color = (idx < pal_size) ? pal[idx] : 0;
+                if (nes_color < 0 || nes_color >= 64) nes_color = 0;
+                row[tx] = (uint8_t)nes_color;
+            }
+        } else {
+            memset(row, 0, THUMB_W);
+        }
+        f_write(file, row, THUMB_W, &bw);
+    }
+}
+
+static void load_slot_thumbnail_to_screen(uint8_t *screen, int sx, int sy, int slot) {
+    char path[128];
+    get_save_path(path, sizeof(path), slot);
+
+    FRESULT fr = f_mount(&shared_fs, "", 1);
+    if (fr != FR_OK) return;
+
+    FIL file;
+    if (f_open(&file, path, FA_READ) != FR_OK) {
+        f_unmount("");
+        return;
+    }
+
+    char magic[SAVE_MAGIC_LEN];
+    UINT br;
+    if (f_read(&file, magic, SAVE_MAGIC_LEN, &br) != FR_OK ||
+        br != SAVE_MAGIC_LEN ||
+        memcmp(magic, SAVE_MAGIC, SAVE_MAGIC_LEN) != 0) {
+        f_close(&file);
+        f_unmount("");
+        return;
+    }
+
+    uint8_t row[THUMB_W];
+    for (int ty = 0; ty < THUMB_H; ty++) {
+        if (f_read(&file, row, THUMB_W, &br) != FR_OK || br != THUMB_W)
+            break;
+        int py = sy + ty;
+        if (py < 0 || py >= SCREEN_HEIGHT) continue;
+        for (int tx = 0; tx < THUMB_W; tx++) {
+            int px = sx + tx;
+            if (px < 0 || px >= SCREEN_WIDTH) continue;
+            screen[py * SCREEN_WIDTH + px] = PAL_THUMB_BASE + (row[tx] & 0x3F);
+        }
+    }
+
+    f_close(&file);
+    f_unmount("");
 }
 
 static const char *save_error = NULL;
 
-static bool do_save_game(void) {
-    
+static bool do_save_game(int slot) {
     save_error = NULL;
 
-    printf("do_save: rom_name='%s'\n", g_rom_name);
+    printf("do_save: rom_name='%s' slot=%d\n", g_rom_name, slot);
     if (g_rom_name[0] == '\0') { save_error = "NO ROM NAME"; return false; }
 
     FRESULT fr = f_mount(&shared_fs, "", 1);
     printf("do_save: f_mount=%d\n", fr);
     if (fr != FR_OK) { save_error = "SD MOUNT FAIL"; return false; }
 
-    f_mkdir("/nes");
-    f_mkdir("/nes/.save");
-
     char path[128];
-    get_save_path(path, sizeof(path));
+    get_save_path(path, sizeof(path), slot);
     printf("do_save: saving to %s\n", path);
 
     FIL file;
@@ -541,26 +642,34 @@ static bool do_save_game(void) {
         return false;
     }
 
-    /* Stream state directly to file — no intermediate buffer */
+    UINT bw;
+    f_write(&file, SAVE_MAGIC, SAVE_MAGIC_LEN, &bw);
+    write_thumbnail_to_file(&file);
+
     int ret = qnes_save_state(&file);
     printf("do_save: qnes_save_state=%d\n", ret);
     f_close(&file);
     f_unmount("");
 
-    if (ret != 0) { save_error = "STATE FAILED"; return false; }
+    if (ret != 0) {
+        save_error = "STATE FAILED";
+        return false;
+    }
+
+    slot_exists[slot] = true;
+    any_save_exists = true;
 
     printf("do_save: OK\n");
     return true;
 }
 
-static bool do_load_game(void) {
+static bool do_load_game(int slot) {
     if (g_rom_name[0] == '\0') return false;
 
-    
     if (f_mount(&shared_fs, "", 1) != FR_OK) return false;
 
     char path[128];
-    get_save_path(path, sizeof(path));
+    get_save_path(path, sizeof(path), slot);
     printf("do_load: loading from %s\n", path);
 
     FIL file;
@@ -571,7 +680,17 @@ static bool do_load_game(void) {
 
     long fsize = (long)f_size(&file);
 
-    /* Stream state directly from file — no intermediate buffer */
+    char magic[SAVE_MAGIC_LEN];
+    UINT br;
+    if (f_read(&file, magic, SAVE_MAGIC_LEN, &br) == FR_OK &&
+        br == SAVE_MAGIC_LEN &&
+        memcmp(magic, SAVE_MAGIC, SAVE_MAGIC_LEN) == 0) {
+        f_lseek(&file, SAVE_HEADER_SIZE);
+        fsize -= SAVE_HEADER_SIZE;
+    } else {
+        f_lseek(&file, 0);
+    }
+
     int ret = qnes_load_state(&file, fsize);
     printf("do_load: qnes_load_state=%d\n", ret);
     f_close(&file);
@@ -622,6 +741,9 @@ void settings_load(void) {
 
     if (f_mount(&shared_fs, "", 1) != FR_OK) return;
 
+    f_mkdir("/nes");
+    f_mkdir("/nes/.save");
+
     FIL file;
     if (f_open(&file, SETTINGS_PATH, FA_READ) != FR_OK) {
         f_unmount("");
@@ -651,6 +773,12 @@ void settings_load(void) {
             if (v >= VOLUME_MIN && v <= VOLUME_MAX)
                 g_settings.volume = (uint8_t)v;
         }
+        else if (parse_ini_line(line, "selector", value, sizeof(value))) {
+            if (strcmp(value, "browser") == 0 || strcmp(value, "1") == 0)
+                g_settings.selector_mode = SELECTOR_MODE_BROWSER;
+            else
+                g_settings.selector_mode = SELECTOR_MODE_CAROUSEL;
+        }
     }
 
     f_close(&file);
@@ -671,16 +799,19 @@ void settings_save(void) {
     }
 
     char buf[256];
+    static const char *selector_mode_ini_names[] = {"carousel", "browser"};
     snprintf(buf, sizeof(buf),
         "; FRANK NES Settings\n"
         "player1 = %s\n"
         "player2 = %s\n"
         "audio = %s\n"
-        "volume = %d\n",
+        "volume = %d\n"
+        "selector = %s\n",
         input_mode_ini_names[g_settings.p1_mode],
         input_mode_ini_names[g_settings.p2_mode],
         audio_mode_ini_names[g_settings.audio_mode],
-        g_settings.volume);
+        g_settings.volume,
+        selector_mode_ini_names[g_settings.selector_mode & 1]);
 
     UINT bw;
     f_write(&file, buf, strlen(buf), &bw);
@@ -714,6 +845,132 @@ bool settings_check_hotkey(void) {
     return triggered;
 }
 
+static void menu_wait_vsync(void);
+
+/* ─── Slot picker ────────────────────────────────────────────────── */
+
+/* Layout for 3x2 grid within overscan-safe area (x=8..247, y=8..231) */
+#define SLOT_BORDER  2
+#define SLOT_W       (THUMB_W + 2 * SLOT_BORDER)
+#define SLOT_H       (THUMB_H + 2 * SLOT_BORDER)
+#define GRID_PAD_X   6
+#define GRID_PAD_Y   6
+#define GRID_TOTAL_W (SLOT_COLS * SLOT_W + (SLOT_COLS - 1) * GRID_PAD_X)
+#define GRID_X       ((SCREEN_WIDTH - GRID_TOTAL_W) / 2)
+#define GRID_Y       40
+
+static void draw_slot_picker_bg(uint8_t *screen, bool is_save) {
+    memset(screen, PAL_BG, SCREEN_WIDTH * SCREEN_HEIGHT);
+
+    const char *title = is_save ? "SAVE GAME" : "LOAD GAME";
+    int title_x = (SCREEN_WIDTH - (int)strlen(title) * FONT_WIDTH) / 2;
+    draw_text(screen, title_x, 16, title, PAL_WHITE);
+    draw_hline(screen, GRID_X, 16 + FONT_HEIGHT + 4, SCREEN_WIDTH - 2 * GRID_X, PAL_GRAY);
+
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        int col = i % SLOT_COLS;
+        int row = i / SLOT_COLS;
+        int sx = GRID_X + col * (SLOT_W + GRID_PAD_X);
+        int sy = GRID_Y + row * (SLOT_H + GRID_PAD_Y);
+        int inner_x = sx + SLOT_BORDER;
+        int inner_y = sy + SLOT_BORDER;
+        int inner_w = SLOT_W - 2 * SLOT_BORDER;
+        int inner_h = THUMB_H;
+
+        if (slot_exists[i]) {
+            fill_rect(screen, inner_x, inner_y, inner_w, inner_h, PAL_DARKGRAY);
+            load_slot_thumbnail_to_screen(screen, inner_x, inner_y, i);
+        } else {
+            fill_rect(screen, inner_x, inner_y, inner_w, inner_h, PAL_DARKGRAY);
+        }
+    }
+
+    const char *help;
+    if (is_save)
+        help = "D-PAD:SELECT  A:SAVE  B:BACK";
+    else
+        help = "D-PAD:SELECT  A:LOAD  B:BACK";
+    int help_x = (SCREEN_WIDTH - (int)strlen(help) * FONT_WIDTH) / 2;
+    draw_text(screen, help_x, 220, help, PAL_GRAY);
+}
+
+static void draw_slot_picker_selection(uint8_t *screen, int selected) {
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        int col = i % SLOT_COLS;
+        int row = i / SLOT_COLS;
+        int sx = GRID_X + col * (SLOT_W + GRID_PAD_X);
+        int sy = GRID_Y + row * (SLOT_H + GRID_PAD_Y);
+        bool sel = (i == selected);
+        uint8_t border_color = sel ? PAL_YELLOW : PAL_GRAY;
+
+        fill_rect(screen, sx, sy, SLOT_W, SLOT_BORDER, border_color);
+        fill_rect(screen, sx, sy + SLOT_H - SLOT_BORDER, SLOT_W, SLOT_BORDER, border_color);
+        fill_rect(screen, sx, sy, SLOT_BORDER, SLOT_H, border_color);
+        fill_rect(screen, sx + SLOT_W - SLOT_BORDER, sy, SLOT_BORDER, SLOT_H, border_color);
+    }
+}
+
+/* Returns selected slot 0..5, or -1 if user backed out */
+static int slot_picker_show(uint8_t *screen, bool is_save) {
+    int selected = 0;
+
+    draw_slot_picker_bg(screen, is_save);
+    draw_slot_picker_selection(screen, selected);
+
+    uint32_t hold_counter = 0;
+    const uint32_t REPEAT_DELAY = 10;
+    const uint32_t REPEAT_RATE = 3;
+
+    /* Wait for button release */
+    for (int i = 0; i < 30; i++) {
+        menu_wait_vsync();
+        if (read_menu_buttons() == 0) break;
+        audio_fill_silence(SAMPLE_RATE / 60);
+        pending_pitch = SCREEN_WIDTH;
+        pending_pixels = screen;
+    }
+    int prev_buttons = read_menu_buttons();
+
+    while (1) {
+        menu_wait_vsync();
+
+        int buttons = read_menu_buttons();
+        int pressed = buttons & ~prev_buttons;
+        if (buttons != 0 && buttons == prev_buttons) {
+            hold_counter++;
+            if (hold_counter > REPEAT_DELAY && (hold_counter % REPEAT_RATE) == 0)
+                pressed = buttons;
+        } else {
+            hold_counter = 0;
+        }
+        prev_buttons = buttons;
+
+        int col = selected % SLOT_COLS;
+        int row = selected / SLOT_COLS;
+
+        if (pressed & BTN_LEFT)  { if (col > 0) col--; }
+        if (pressed & BTN_RIGHT) { if (col < SLOT_COLS - 1) col++; }
+        if (pressed & BTN_UP)    { if (row > 0) row--; }
+        if (pressed & BTN_DOWN)  { if (row < SLOT_ROWS - 1) row++; }
+        selected = row * SLOT_COLS + col;
+
+        if (pressed & (BTN_A | BTN_START)) {
+            if (!is_save && !slot_exists[selected])
+                goto draw;
+            return selected;
+        }
+
+        if (pressed & BTN_B)
+            return -1;
+
+draw:
+        draw_slot_picker_selection(screen, selected);
+        audio_fill_silence(SAMPLE_RATE / 60);
+        pending_pitch = SCREEN_WIDTH;
+        pending_pixels = screen;
+    }
+}
+
 /* ─── Menu main loop ──────────────────────────────────────────────── */
 
 static void menu_wait_vsync(void) {
@@ -730,8 +987,8 @@ settings_result_t settings_menu_show(uint8_t *screen_buffer) {
     /* Copy current settings for editing */
     edit_settings = g_settings;
 
-    /* Check if a save file exists for this ROM */
-    save_exists = check_save_exists();
+    /* Scan all save slots for this ROM */
+    scan_save_slots();
     status_frames = 0;
 
     /* Set up menu palette */
@@ -797,21 +1054,31 @@ settings_result_t settings_menu_show(uint8_t *screen_buffer) {
                 break;
             }
             if (selected == MENU_SAVE_GAME) {
-                bool ok = do_save_game();
-                if (ok) {
-                    save_exists = true;
-                    status_msg = "SAVED.";
-                } else {
-                    status_msg = save_error ? save_error : "SAVE FAILED.";
+                int slot = slot_picker_show(screen_buffer, true);
+                setup_menu_palette();
+                if (slot >= 0) {
+                    bool ok = do_save_game(slot);
+                    if (ok) {
+                        status_msg = "SAVED.";
+                    } else {
+                        status_msg = save_error ? save_error : "SAVE FAILED.";
+                    }
+                    status_frames = 120;
                 }
-                status_frames = 120;
+                prev_buttons = read_menu_buttons();
                 continue;
             }
-            if (selected == MENU_LOAD_GAME && save_exists) {
-                do_load_game();
-                g_settings = edit_settings;
-                settings_save();
-                break;  /* exit menu after loading state */
+            if (selected == MENU_LOAD_GAME && any_save_exists) {
+                int slot = slot_picker_show(screen_buffer, false);
+                setup_menu_palette();
+                if (slot >= 0 && slot_exists[slot]) {
+                    do_load_game(slot);
+                    g_settings = edit_settings;
+                    settings_save();
+                    break;
+                }
+                prev_buttons = read_menu_buttons();
+                continue;
             }
             if (selected == MENU_RESET) {
                 g_settings = edit_settings;

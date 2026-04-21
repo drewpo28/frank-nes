@@ -6,6 +6,7 @@
  */
 
 #include "rom_selector.h"
+#include "settings.h"
 #include "board_config.h"
 #include "pico/stdlib.h"
 #include "nespad.h"
@@ -1246,6 +1247,8 @@ static void fb_draw_browser(const char *path, int selected, int scroll) {
     fb_text_center(SCREEN_H - 19, "A/ENTER:OPEN  B/ESC:BACK", PAL_GRAY);
 }
 
+static int search_dialog_show(void);
+
 static bool file_browser_show(long *out_rom_size) {
     fb = test_pixels;
     fb_show = sel_backbuf;
@@ -1291,12 +1294,35 @@ static bool file_browser_show(long *out_rom_size) {
         prev_buttons = buttons;
 
         /* F11, ESC, B, or Select+Start: back to carousel */
-        if (pressed & (BTN_F11 | BTN_ESC | BTN_B))
+        if (pressed & (BTN_F11 | BTN_ESC | BTN_B)) {
+            g_settings.selector_mode = SELECTOR_MODE_CAROUSEL;
+            settings_save();
             break;
-        if ((pressed & BTN_SELECT) && (buttons & BTN_START))
+        }
+        if (((pressed & BTN_SELECT) && (buttons & BTN_START)) ||
+            ((pressed & BTN_START) && (buttons & BTN_SELECT))) {
+            g_settings.selector_mode = SELECTOR_MODE_CAROUSEL;
+            settings_save();
             break;
-        if ((pressed & BTN_START) && (buttons & BTN_SELECT))
-            break;
+        }
+
+        /* F3 or Select+A: search (switches to carousel with result) */
+        bool fb_sel_a = ((pressed & BTN_SELECT) && (buttons & BTN_A))
+                     || ((pressed & BTN_A) && (buttons & BTN_SELECT));
+        if ((pressed & BTN_F3) || fb_sel_a) {
+            int found = search_dialog_show();
+            if (found >= 0 && found < rom_count) {
+                g_settings.selector_mode = SELECTOR_MODE_CAROUSEL;
+                settings_save();
+                f_unmount("");
+                /* Signal caller to reload carousel at this index */
+                last_selected_rom = found;
+                return false;
+            }
+            setup_selector_palette();
+            prev_buttons = read_selector_buttons();
+            continue;
+        }
 
         /* Navigation */
         if (pressed & BTN_UP) {
@@ -1707,6 +1733,18 @@ bool rom_selector_show(long *out_rom_size) {
     /* Load cover art for the initial selection */
     if (sd_ok) load_rom_image(selected);
 
+    /* Start in file browser if that was the last used mode */
+    if (g_settings.selector_mode == SELECTOR_MODE_BROWSER) {
+        f_unmount("");
+        if (file_browser_show(out_rom_size))
+            return true;
+        selected = last_selected_rom;
+        sd_ok = (f_mount(&show_fs, "", 1) == FR_OK);
+        cur_img_idx = -1;
+        if (sd_ok) load_rom_image(selected);
+        prev_buttons = read_selector_buttons();
+    }
+
     while (1) {
         selector_wait_vsync();
 
@@ -1763,6 +1801,8 @@ bool rom_selector_show(long *out_rom_size) {
         bool sel_start = ((pressed & BTN_SELECT) && (buttons & BTN_START))
                       || ((pressed & BTN_START) && (buttons & BTN_SELECT));
         if ((pressed & BTN_F11) || sel_start) {
+            g_settings.selector_mode = SELECTOR_MODE_BROWSER;
+            settings_save();
             f_unmount("");
             if (file_browser_show(out_rom_size))
                 return true;
