@@ -105,7 +105,11 @@ static const char *audio_mode_names[] = {"HDMI", "I2S", "DISABLED"};
 settings_t g_settings = {
     .p1_mode = INPUT_MODE_ANY,
     .p2_mode = INPUT_MODE_DISABLED,
+#if defined(VIDEO_COMPOSITE) || defined(HDMI_PIO)
+    .audio_mode = AUDIO_MODE_I2S,
+#else
     .audio_mode = AUDIO_MODE_HDMI,
+#endif
     .volume = 100,
     .selector_mode = SELECTOR_MODE_CAROUSEL,
 };
@@ -338,7 +342,12 @@ static void change_value(menu_item_t item, int dir) {
             break;
         }
         case MENU_AUDIO:
+#if defined(VIDEO_COMPOSITE) || defined(HDMI_PIO)
+            edit_settings.audio_mode = (edit_settings.audio_mode == AUDIO_MODE_I2S)
+                ? AUDIO_MODE_DISABLED : AUDIO_MODE_I2S;
+#else
             edit_settings.audio_mode = (uint8_t)((edit_settings.audio_mode + AUDIO_MODE_COUNT + dir) % AUDIO_MODE_COUNT);
+#endif
             break;
         case MENU_VOLUME: {
             int v = (int)edit_settings.volume + dir * VOLUME_STEP;
@@ -775,6 +784,10 @@ void settings_load(void) {
                 g_settings.audio_mode = AUDIO_MODE_DISABLED;
             else
                 g_settings.audio_mode = AUDIO_MODE_HDMI;
+#if defined(VIDEO_COMPOSITE) || defined(HDMI_PIO)
+            if (g_settings.audio_mode == AUDIO_MODE_HDMI)
+                g_settings.audio_mode = AUDIO_MODE_I2S;
+#endif
         }
         else if (parse_ini_line(line, "volume", value, sizeof(value))) {
             int v = atoi(value);
