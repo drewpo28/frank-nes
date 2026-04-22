@@ -398,7 +398,7 @@ static void draw_settings_menu(uint8_t *screen, int selected) {
 
         if (item == MENU_SEPARATOR1 || item == MENU_SEPARATOR2 || item == MENU_SEPARATOR3) {
             draw_hline(screen, MENU_X, y + LINE_HEIGHT / 2, SCREEN_WIDTH - 2 * MENU_X, PAL_GRAY);
-            y += LINE_HEIGHT;
+            y += LINE_HEIGHT + LINE_HEIGHT / 2;
             continue;
         }
 
@@ -422,6 +422,11 @@ static void draw_settings_menu(uint8_t *screen, int selected) {
             char buf[24];
             snprintf(buf, sizeof(buf), "< %s >", val);
             draw_text(screen, VALUE_X, y, buf, color);
+        }
+
+        /* Hint for MODE when changed */
+        if (item == MENU_MODE && edit_settings.emu_mode != g_settings.emu_mode) {
+            draw_text(screen, MENU_X, y + FONT_HEIGHT + 1, "RESTART TO APPLY", PAL_GRAY);
         }
 
         y += LINE_HEIGHT;
