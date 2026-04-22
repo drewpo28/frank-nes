@@ -1,13 +1,18 @@
 #!/bin/bash
 #
-# release.sh - Build release firmware for frank-nes (M2 platform)
+# release.sh - Build release firmware for frank-nes (all platforms)
 #
 # Usage: ./release.sh [VERSION]
 #   VERSION  - version string (e.g. "1.01"), prompted interactively if omitted
 #
-# Output format: frank-nes_A_BB.uf2
-#   A  = Major version
-#   BB = Minor version (zero-padded)
+# Output format: frank-nes_A_BB_<platform>_<video>.uf2
+#
+# Build matrix (8 variants):
+#   m2: hdmi_hstx, hdmi_vga, tv
+#   m1: hdmi_vga, tv
+#   pc: hdmi_hstx
+#   dv: hdmi_vga
+#   z0: hdmi_vga
 #
 
 set -e
@@ -21,6 +26,18 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# Build matrix: "platform:video_suffix:cmake_video_flags"
+BUILD_MATRIX=(
+    "m2:hdmi_hstx:"
+    "m2:hdmi_vga:-DHDMI_PIO=ON"
+    "m2:tv:-DVIDEO_COMPOSITE=ON"
+    "m1:hdmi_vga:"
+    "m1:tv:-DVIDEO_COMPOSITE=ON"
+    "pc:hdmi_hstx:"
+    "dv:hdmi_vga:"
+    "z0:hdmi_vga:"
+)
 
 # Version file
 VERSION_FILE="version.txt"
@@ -48,6 +65,7 @@ echo -e "${CYAN}│                     frank-nes Release Builder               
 echo -e "${CYAN}└─────────────────────────────────────────────────────────────────┘${NC}"
 echo ""
 echo -e "Last version: ${YELLOW}${LAST_MAJOR}.$(printf '%02d' $LAST_MINOR)${NC}"
+echo -e "Variants: ${CYAN}${#BUILD_MATRIX[@]}${NC} (m2x3, m1x2, pc, dv, z0)"
 echo ""
 
 DEFAULT_VERSION="${NEXT_MAJOR}.$(printf '%02d' $NEXT_MINOR)"
@@ -96,60 +114,100 @@ echo "$MAJOR $MINOR" > "$VERSION_FILE"
 RELEASE_DIR="$SCRIPT_DIR/release"
 mkdir -p "$RELEASE_DIR"
 
-# Output filename
-OUTPUT_NAME="frank-nes_${VERSION}.uf2"
+SUCCEEDED=()
+FAILED=()
 
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "${CYAN}Building: $OUTPUT_NAME${NC}"
-echo ""
+for ENTRY in "${BUILD_MATRIX[@]}"; do
+    IFS=':' read -r PLAT VIDEO_SUFFIX CMAKE_VIDEO_FLAGS <<< "$ENTRY"
+    LABEL="${PLAT}_${VIDEO_SUFFIX}"
+    OUTPUT_NAME="frank-nes_${VERSION}_${LABEL}.uf2"
 
-# Clean and create build directory
-rm -rf build
-mkdir build
-cd build
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo -e "${CYAN}Building: $OUTPUT_NAME${NC}"
+    echo ""
 
-# Configure with CMake (USB HID enabled, logging disabled for release)
-cmake ../src/platform/pico -DUSB_HID_ENABLED=ON -DENABLE_LOGGING=0 > /dev/null 2>&1
+    # Clean and create build directory
+    rm -rf build
+    mkdir build
+    cd build
 
-# Build
-if make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) > /dev/null 2>&1; then
-    # Copy UF2 to release directory
-    if [[ -f "frank-nes.uf2" ]]; then
-        cp "frank-nes.uf2" "$RELEASE_DIR/$OUTPUT_NAME"
-        echo -e "  ${GREEN}✓ Success${NC} → release/$OUTPUT_NAME"
+    # Configure with CMake (USB HID enabled, logging disabled for release)
+    if cmake ../src/platform/pico \
+        -DPLATFORM="$PLAT" \
+        $CMAKE_VIDEO_FLAGS \
+        -DUSB_HID_ENABLED=ON \
+        -DENABLE_LOGGING=0 > /dev/null 2>&1; then
+
+        # Build
+        if make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) > /dev/null 2>&1; then
+            # Copy UF2 to release directory
+            if [[ -f "frank-nes.uf2" ]]; then
+                cp "frank-nes.uf2" "$RELEASE_DIR/$OUTPUT_NAME"
+                echo -e "  ${GREEN}✓ $LABEL${NC} → release/$OUTPUT_NAME"
+                SUCCEEDED+=("$LABEL")
+            else
+                echo -e "  ${RED}✗ $LABEL: UF2 not found${NC}"
+                FAILED+=("$LABEL")
+            fi
+        else
+            echo -e "  ${RED}✗ $LABEL: Build failed${NC}"
+            FAILED+=("$LABEL")
+        fi
     else
-        echo -e "  ${RED}✗ UF2 not found${NC}"
-        exit 1
+        echo -e "  ${RED}✗ $LABEL: CMake configure failed${NC}"
+        FAILED+=("$LABEL")
     fi
-else
-    echo -e "  ${RED}✗ Build failed${NC}"
-    exit 1
-fi
 
-cd "$SCRIPT_DIR"
+    cd "$SCRIPT_DIR"
+done
 
 # Clean up build directory
 rm -rf build
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "${GREEN}Release build complete!${NC}"
+
+if [[ ${#SUCCEEDED[@]} -gt 0 ]]; then
+    echo -e "${GREEN}Succeeded: ${SUCCEEDED[*]}${NC}"
+fi
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    echo -e "${RED}Failed: ${FAILED[*]}${NC}"
+fi
+
 echo ""
-echo "Release file: $RELEASE_DIR/$OUTPUT_NAME"
-echo ""
-ls -la "$RELEASE_DIR/$OUTPUT_NAME" 2>/dev/null | awk '{print "  " $9 " (" $5 " bytes)"}'
+echo "Release files:"
+for LABEL in "${SUCCEEDED[@]}"; do
+    OUTPUT_NAME="frank-nes_${VERSION}_${LABEL}.uf2"
+    ls -la "$RELEASE_DIR/$OUTPUT_NAME" 2>/dev/null | awk '{printf "  %-55s (%s bytes)\n", $9, $5}'
+done
 echo ""
 echo -e "Version: ${CYAN}${VERSION_DOT}${NC}"
 
-# Create GitHub release and upload UF2
-TAG="v${VERSION_DOT}"
-echo ""
-echo -e "${CYAN}Creating GitHub release: ${TAG}${NC}"
-if gh release create "$TAG" "$RELEASE_DIR/$OUTPUT_NAME" \
-    --title "Version ${VERSION_DOT}" \
-    --generate-notes; then
-    echo -e "${GREEN}✓ GitHub release created: ${TAG}${NC}"
-else
-    echo -e "${YELLOW}⚠ GitHub release failed (you can upload manually)${NC}"
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    echo -e "${YELLOW}Warning: ${#FAILED[@]} variant(s) failed to build${NC}"
+fi
+
+# Create GitHub release and upload all UF2s
+if [[ ${#SUCCEEDED[@]} -gt 0 ]]; then
+    TAG="v${VERSION_DOT}"
+    echo ""
+    echo -e "${CYAN}Creating GitHub release: ${TAG}${NC}"
+
+    RELEASE_FILES=()
+    for LABEL in "${SUCCEEDED[@]}"; do
+        RELEASE_FILES+=("$RELEASE_DIR/frank-nes_${VERSION}_${LABEL}.uf2")
+    done
+
+    if gh release create "$TAG" "${RELEASE_FILES[@]}" \
+        --title "Version ${VERSION_DOT}" \
+        --generate-notes; then
+        echo -e "${GREEN}✓ GitHub release created: ${TAG}${NC}"
+    else
+        echo -e "${YELLOW}⚠ GitHub release failed (you can upload manually)${NC}"
+    fi
+fi
+
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    exit 1
 fi

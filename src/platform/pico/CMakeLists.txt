@@ -16,7 +16,16 @@ if(NOT PICO_BUILD_FROM_ROOT)
     # ====================================================================================
     cmake_minimum_required(VERSION 3.13)
 
-    set(PICO_BOARD pico2 CACHE STRING "Board type")
+    # Platform selection: m1, m2 (default), pc, dv, z0
+    set(PLATFORM "m2" CACHE STRING "Target platform: m1, m2, pc, dv, z0")
+    set_property(CACHE PLATFORM PROPERTY STRINGS m1 m2 pc dv z0)
+
+    if(PLATFORM STREQUAL "z0")
+        set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards CACHE PATH "" FORCE)
+        set(PICO_BOARD "waveshare_rp2350_pizero" CACHE STRING "Board type" FORCE)
+    else()
+        set(PICO_BOARD "pico2" CACHE STRING "Board type" FORCE)
+    endif()
 
     include(${CMAKE_CURRENT_LIST_DIR}/../../../pico_sdk_import.cmake)
 
@@ -35,14 +44,95 @@ set(COREDIR ${SRCDIR}/core_quicknes)
 set(EMU2413DIR ${SRCDIR}/emu2413)
 set(PICODIR ${SRCDIR}/platform/pico)
 
-# Video output selection: HSTX HDMI (default), Composite TV, or PIO HDMI
+# Platform selection (may already be set from standalone block above)
+if(NOT DEFINED PLATFORM)
+    set(PLATFORM "m2" CACHE STRING "Target platform: m1, m2, pc, dv, z0")
+endif()
+message(STATUS "Platform: ${PLATFORM}")
+
+# Per-platform compile definition and pin configuration
+if(PLATFORM STREQUAL "m1")
+    set(PLATFORM_DEF PLATFORM_M1)
+    set(SD_SCK 2)
+    set(SD_MOSI 3)
+    set(SD_MISO 4)
+    set(SD_CS 5)
+    set(KBD_CLK 0)
+    set(HDMI_PIN 6)
+    set(VGA_PIN 6)
+    set(TV_PIN 6)
+elseif(PLATFORM STREQUAL "pc")
+    set(PLATFORM_DEF PLATFORM_PC)
+    set(SD_SCK 6)
+    set(SD_MOSI 7)
+    set(SD_MISO 4)
+    set(SD_CS 22)
+    set(KBD_CLK 0)
+    set(HDMI_PIN 12)
+elseif(PLATFORM STREQUAL "dv")
+    set(PLATFORM_DEF PLATFORM_DV)
+    set(SD_SCK 5)
+    set(SD_MOSI 18)
+    set(SD_MISO 19)
+    set(SD_CS 22)
+    set(KBD_CLK 0)
+    set(HDMI_PIN 6)
+    set(VGA_PIN 6)
+elseif(PLATFORM STREQUAL "z0")
+    set(PLATFORM_DEF PLATFORM_Z0)
+    set(SD_SCK 30)
+    set(SD_MOSI 31)
+    set(SD_MISO 40)
+    set(SD_CS 43)
+    set(KBD_CLK 14)
+    set(HDMI_PIN 32)
+    set(VGA_PIN 32)
+else()
+    set(PLATFORM_DEF PLATFORM_M2)
+    set(SD_SCK 6)
+    set(SD_MOSI 7)
+    set(SD_MISO 4)
+    set(SD_CS 5)
+    set(KBD_CLK 2)
+    set(HDMI_PIN 12)
+    set(VGA_PIN 12)
+    set(TV_PIN 12)
+endif()
+
+# Video output selection: HSTX HDMI (default for m2/pc), Composite TV, or PIO HDMI
 option(VIDEO_COMPOSITE "Build with composite TV output instead of HDMI" OFF)
-option(HDMI_PIO "Build with PIO-based HDMI output (murmulator 2)" OFF)
+option(HDMI_PIO "Build with PIO-based HDMI output" OFF)
+
+# Auto-select video driver for non-HSTX platforms
+if(NOT VIDEO_COMPOSITE AND NOT HDMI_PIO)
+    if(PLATFORM STREQUAL "m1" OR PLATFORM STREQUAL "dv" OR PLATFORM STREQUAL "z0")
+        set(HDMI_PIO ON)
+    endif()
+endif()
+
+# Validate video mode vs platform
+if(VIDEO_COMPOSITE)
+    if(PLATFORM STREQUAL "pc" OR PLATFORM STREQUAL "dv" OR PLATFORM STREQUAL "z0")
+        message(FATAL_ERROR "Platform '${PLATFORM}' does not support composite TV output")
+    endif()
+endif()
+if(NOT HDMI_PIO AND NOT VIDEO_COMPOSITE)
+    if(PLATFORM STREQUAL "m1" OR PLATFORM STREQUAL "dv" OR PLATFORM STREQUAL "z0")
+        message(FATAL_ERROR "Platform '${PLATFORM}' requires HDMI_PIO (no HSTX support)")
+    endif()
+endif()
 
 if(HDMI_PIO)
     add_subdirectory(${DRIVERSDIR}/hdmi_pio hdmi_pio)
+    target_compile_definitions(hdmi_pio PUBLIC
+        HDMI_BASE_PIN=${HDMI_PIN}
+        VGA_BASE_PIN=${VGA_PIN}
+    )
 elseif(VIDEO_COMPOSITE)
     add_subdirectory(${DRIVERSDIR}/tv tv_driver)
+    if(DEFINED TV_PIN)
+        target_compile_definitions(tv_driver PUBLIC TV_BASE_PIN=${TV_PIN})
+    endif()
 else()
     # HSTX clocked from PLL_USB at 126MHz (reconfigured in main)
     add_compile_definitions(MODE_HSTX_CLK_DIV=1)
@@ -127,21 +217,24 @@ target_include_directories(frank-nes PRIVATE
 )
 
 target_compile_definitions(frank-nes PRIVATE
+    ${PLATFORM_DEF}
     PICO_CORE1_STACK_SIZE=0xC00
     PICO_STACK_SIZE=0x1000
     NDEBUG
     NO_UNALIGNED_ACCESS
     QNES_EXT_TILE_CACHE
-    SDCARD_PIN_SPI0_SCK=6
-    SDCARD_PIN_SPI0_MOSI=7
-    SDCARD_PIN_SPI0_MISO=4
-    SDCARD_PIN_SPI0_CS=5
+    SDCARD_PIN_SPI0_SCK=${SD_SCK}
+    SDCARD_PIN_SPI0_MOSI=${SD_MOSI}
+    SDCARD_PIN_SPI0_MISO=${SD_MISO}
+    SDCARD_PIN_SPI0_CS=${SD_CS}
 )
 if(HDMI_PIO)
     target_compile_definitions(frank-nes PRIVATE HDMI_PIO)
 elseif(VIDEO_COMPOSITE)
     target_compile_definitions(frank-nes PRIVATE VIDEO_COMPOSITE)
 endif()
+
+target_compile_definitions(frank-nes PRIVATE HAS_NESPAD=1)
 
 # C++ flags: no exceptions, no RTTI (saves flash/RAM)
 # -mno-unaligned-access: QuickNES casts byte* to uint32_t* for tile cache,
@@ -167,9 +260,11 @@ target_link_libraries(frank-nes
     hardware_pwm
     hardware_xip_cache
     sdcard
-    nespad
     ps2kbd
 )
+
+target_link_libraries(frank-nes nespad)
+
 if(HDMI_PIO)
     target_link_libraries(frank-nes hdmi_pio)
 elseif(VIDEO_COMPOSITE)

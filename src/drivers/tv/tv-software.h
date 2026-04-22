@@ -5,7 +5,9 @@
 
 #define PIO_VIDEO pio0
 
+#ifndef TV_BASE_PIN
 #define TV_BASE_PIN (12)
+#endif
 
 #define TEXTMODE_COLS 40
 #define TEXTMODE_ROWS 30

@@ -9,46 +9,20 @@
 #define BOARD_CONFIG_H
 
 /*
- * frank-nes M2 Board Configuration
- *
- * HDMI: GPIO 12-19 (HSTX)
- * SD:   CLK=6, CMD=7, DAT0=4, DAT3=5
- * PS/2: CLK=2, DATA=3
- * NES Gamepad: CLK=20, LATCH=21, DATA=26
+ * Platform board configuration dispatcher.
+ * Select platform via CMake: -DPLATFORM=m1|m2|pc|dv|z0
  */
 
-#define BOARD_M2
-
-/* PS/2 Keyboard */
-#define KBD_CLOCK_PIN 2
-#define KBD_DATA_PIN  3
-#define PS2_PIN_CLK   2
-#define PS2_PIN_DATA  3
-
-/* SD Card (PIO-SPI) */
-#define SDCARD_PIN_SPI0_SCK  6
-#define SDCARD_PIN_SPI0_MOSI 7
-#define SDCARD_PIN_SPI0_MISO 4
-#define SDCARD_PIN_SPI0_CS   5
-
-/* NES Gamepad */
-#define NESPAD_CLK_PIN   20
-#define NESPAD_LATCH_PIN 21
-#define NESPAD_DATA_PIN  26
-
-/* I2S Audio (optional external DAC) */
-#define I2S_DATA_PIN       9
-#define I2S_CLOCK_PIN_BASE 10
-
-/* PWM Audio (no external DAC needed, RC low-pass filter on pins) */
-#define PWM_PIN0 10
-#define PWM_PIN1 11
-
-/* Composite TV output (optional, GPIO 12-19) */
-#define TV_BASE_PIN 12
-
-/* PSRAM (auto-detect CS pin at runtime) */
-#define PSRAM_CS_PIN_RP2350B 47
-#define PSRAM_CS_PIN_RP2350A 8
+#if defined(PLATFORM_M1)
+  #include "board_m1.h"
+#elif defined(PLATFORM_PC)
+  #include "board_pc.h"
+#elif defined(PLATFORM_DV)
+  #include "board_dv.h"
+#elif defined(PLATFORM_Z0)
+  #include "board_z0.h"
+#else
+  #include "board_m2.h"
+#endif
 
 #endif /* BOARD_CONFIG_H */

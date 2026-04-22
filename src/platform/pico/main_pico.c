@@ -245,10 +245,12 @@ static bool i2s_initialized = false;
 static bool pwm_audio_initialized = false;
 
 static void ensure_i2s_initialized(void) {
+#ifdef HAS_I2S
     if (!i2s_initialized) {
         i2s_audio_init(I2S_DATA_PIN, I2S_CLOCK_PIN_BASE, SAMPLE_RATE);
         i2s_initialized = true;
     }
+#endif
 }
 
 #include "hardware/pwm.h"
@@ -835,12 +837,16 @@ static void real_main(void)
     sleep_ms(200);
     audio_fill_silence(SAMPLE_RATE / 60 * 6);
 #elif defined(HDMI_PIO)
-    /* Autodetect VGA vs HDMI by probing GPIO 12/13 */
+    /* Autodetect VGA vs HDMI by probing HDMI connector pins */
     {
         extern bool SELECT_VGA;
-        uint8_t link = testPins(12, 13);
+#ifdef HAS_TV
+        uint8_t link = testPins(HDMI_BASE_PIN, HDMI_BASE_PIN + 1);
         SELECT_VGA = (link == 0) || (link == 0x1F);
-        printf("HDMI_PIO: testPins=%u SELECT_VGA=%d\n", link, SELECT_VGA);
+#else
+        SELECT_VGA = false;
+#endif
+        printf("HDMI_PIO: SELECT_VGA=%d\n", SELECT_VGA);
     }
     /* Start PIO HDMI/VGA output — runs on Core 0 via DMA ISR, no Core 1 needed */
     memset(soft_framebuf, 0, sizeof(soft_framebuf));
@@ -889,11 +895,11 @@ static void real_main(void)
         rom_selector_preload_index();
     }
 
-    /* Init NES gamepad PIO driver (after HDMI, matching murmgenesis order) */
+    /* Init NES gamepad PIO driver */
     nespad_begin(clock_get_hz(clk_sys) / 1000,
                  NESPAD_CLK_PIN, NESPAD_DATA_PIN, NESPAD_LATCH_PIN);
 
-    /* Init PS/2 keyboard (PIO0, CLK=GPIO2, DATA=GPIO3) */
+    /* Init PS/2 keyboard */
     ps2kbd_init();
     printf("PS/2 keyboard initialized (CLK=%d, DATA=%d)\n", PS2_PIN_CLK, PS2_PIN_DATA);
 

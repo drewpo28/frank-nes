@@ -9,7 +9,15 @@ target_sources(ps2kbd PRIVATE
 
 target_link_libraries(ps2kbd PRIVATE hardware_pio hardware_clocks)
 
-target_compile_definitions(ps2kbd PRIVATE BOARD_M2 KBD_CLOCK_PIN=2)
+target_compile_definitions(ps2kbd PRIVATE
+    KBD_CLOCK_PIN=${KBD_CLK}
+    ${PLATFORM_DEF}
+)
+if(HDMI_PIO)
+    target_compile_definitions(ps2kbd PRIVATE HDMI_PIO=1)
+elseif(VIDEO_COMPOSITE)
+    target_compile_definitions(ps2kbd PRIVATE VIDEO_COMPOSITE=1)
+endif()
 
 target_include_directories(ps2kbd PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}

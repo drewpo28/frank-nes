@@ -8,6 +8,7 @@
 #include "pico/stdio.h"
 #include "pico/stdio/driver.h"
 
+#ifndef NO_UART_LOGGING
 static void uart_out_chars(const char *buf, int len) {
     for (int i = 0; i < len; i++) {
         if (buf[i] == '\n')
@@ -22,7 +23,10 @@ stdio_driver_t uart_log_driver = {
     .crlf_enabled = false,
 #endif
 };
+#endif
 
 void uart_logging_register(void) {
+#ifndef NO_UART_LOGGING
     stdio_set_driver_enabled(&uart_log_driver, true);
+#endif
 }

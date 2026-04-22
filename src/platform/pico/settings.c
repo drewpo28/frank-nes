@@ -7,6 +7,7 @@
  */
 
 #include "settings.h"
+#include "board_config.h"
 #include "quicknes.h"
 #include "pico/stdlib.h"
 #include "nespad.h"
@@ -110,7 +111,11 @@ settings_t g_settings = {
     .p1_mode = INPUT_MODE_ANY,
     .p2_mode = INPUT_MODE_DISABLED,
 #if defined(VIDEO_COMPOSITE) || defined(HDMI_PIO)
+  #ifdef HAS_I2S
     .audio_mode = AUDIO_MODE_I2S,
+  #else
+    .audio_mode = AUDIO_MODE_PWM,
+  #endif
 #else
     .audio_mode = AUDIO_MODE_HDMI,
 #endif
@@ -350,13 +355,30 @@ static void change_value(menu_item_t item, int dir) {
         }
         case MENU_AUDIO: {
 #if defined(VIDEO_COMPOSITE) || defined(HDMI_PIO)
-            /* No HDMI audio — cycle: I2S → PWM → DISABLED → I2S */
+  #ifdef HAS_I2S
+            /* PIO video + I2S: cycle I2S → PWM → DISABLED */
             static const uint8_t soft_modes[] = { AUDIO_MODE_I2S, AUDIO_MODE_PWM, AUDIO_MODE_DISABLED };
             int idx = 0;
             for (int m = 0; m < 3; m++) if (soft_modes[m] == edit_settings.audio_mode) { idx = m; break; }
             idx = (idx + 3 + dir) % 3;
             edit_settings.audio_mode = soft_modes[idx];
+  #else
+            /* PIO video, no I2S: cycle PWM → DISABLED */
+            static const uint8_t pwm_modes[] = { AUDIO_MODE_PWM, AUDIO_MODE_DISABLED };
+            int idx = 0;
+            for (int m = 0; m < 2; m++) if (pwm_modes[m] == edit_settings.audio_mode) { idx = m; break; }
+            idx = (idx + 2 + dir) % 2;
+            edit_settings.audio_mode = pwm_modes[idx];
+  #endif
+#elif !defined(HAS_I2S)
+            /* HSTX, no I2S (e.g. PC): cycle HDMI → PWM → DISABLED */
+            static const uint8_t hstx_modes[] = { AUDIO_MODE_HDMI, AUDIO_MODE_PWM, AUDIO_MODE_DISABLED };
+            int idx = 0;
+            for (int m = 0; m < 3; m++) if (hstx_modes[m] == edit_settings.audio_mode) { idx = m; break; }
+            idx = (idx + 3 + dir) % 3;
+            edit_settings.audio_mode = hstx_modes[idx];
 #else
+            /* HSTX + I2S (M2): full cycle HDMI → I2S → PWM → DISABLED */
             edit_settings.audio_mode = (uint8_t)((edit_settings.audio_mode + AUDIO_MODE_COUNT + dir) % AUDIO_MODE_COUNT);
 #endif
             break;
@@ -810,6 +832,10 @@ void settings_load(void) {
 #if defined(VIDEO_COMPOSITE) || defined(HDMI_PIO)
             if (g_settings.audio_mode == AUDIO_MODE_HDMI)
                 g_settings.audio_mode = AUDIO_MODE_I2S;
+#endif
+#ifndef HAS_I2S
+            if (g_settings.audio_mode == AUDIO_MODE_I2S)
+                g_settings.audio_mode = AUDIO_MODE_PWM;
 #endif
         }
         else if (parse_ini_line(line, "volume", value, sizeof(value))) {
