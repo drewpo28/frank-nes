@@ -520,6 +520,9 @@ static void setup_menu_palette(void) {
 static int read_menu_buttons(void) {
     nespad_read();
     ps2kbd_tick();
+#ifdef USB_HID_ENABLED
+    usbhid_task();
+#endif
 
     int buttons = 0;
 

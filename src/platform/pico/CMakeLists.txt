@@ -87,6 +87,7 @@ elseif(PLATFORM STREQUAL "z0")
     set(KBD_CLK 14)
     set(HDMI_PIN 32)
     set(VGA_PIN 32)
+    set(USB_HID_ENABLED ON)
 else()
     set(PLATFORM_DEF PLATFORM_M2)
     set(SD_SCK 6)
@@ -127,6 +128,7 @@ if(HDMI_PIO)
     target_compile_definitions(hdmi_pio PUBLIC
         HDMI_BASE_PIN=${HDMI_PIN}
         VGA_BASE_PIN=${VGA_PIN}
+        ${PLATFORM_DEF}
     )
 elseif(VIDEO_COMPOSITE)
     add_subdirectory(${DRIVERSDIR}/tv tv_driver)
@@ -238,6 +240,8 @@ target_compile_definitions(frank-nes PRIVATE HAS_NESPAD=1)
 
 if(PLATFORM STREQUAL "z0")
     target_compile_definitions(frank-nes PRIVATE SDCARD_SPI_BUS=spi1)
+    # No PSRAM on Waveshare PiZero2350 — drop second pixel buffer (64 KiB) from QuickNES.
+    target_compile_definitions(frank-nes PRIVATE QNES_SINGLE_PIXEL_BUF)
     target_link_libraries(frank-nes hardware_spi)
 endif()
 

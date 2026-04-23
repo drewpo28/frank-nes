@@ -367,13 +367,13 @@ void video_post_frame(const uint8_t *pixels, long pitch) {
 }
 
 void video_wait_vsync(void) {
+#if USB_HID_ENABLED
+    usbhid_task();
+#endif
 #if defined(VIDEO_COMPOSITE) || defined(HDMI_PIO)
     sleep_ms(1);
 #else
     while (pending_pixels != NULL) {
-#if USB_HID_ENABLED
-        usbhid_task();
-#endif
         __wfe();
     }
     vsync_flag = 0;
@@ -991,6 +991,10 @@ static void real_main(void)
                 __wfe();
             }
             vsync_flag = 0;
+#endif
+
+#if USB_HID_ENABLED
+            usbhid_task();
 #endif
 
             /* Fresh gamepad read right at vsync — input from NOW, not

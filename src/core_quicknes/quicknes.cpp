@@ -28,9 +28,16 @@ static void apply_region_settings(void);
 static Nes_Emu *emu;
 
 /* Double-buffered pixel output: emulator writes to back buffer while
-   the display reads from the front buffer (no tearing). */
+   the display reads from the front buffer (no tearing).
+   Define QNES_SINGLE_PIXEL_BUF on memory-tight platforms (no PSRAM): saves 64 KiB
+   BSS at the cost of sprite-blink persistence when sprites drop off (30 Hz flicker). */
+#ifdef QNES_SINGLE_PIXEL_BUF
+#define PIXEL_BUF_COUNT 1
+#else
+#define PIXEL_BUF_COUNT 2
+#endif
 #define PIXEL_BUF_SIZE ((256 + 16) * (240 + 2))
-static uint8_t pixel_bufs[2][PIXEL_BUF_SIZE];
+static uint8_t pixel_bufs[PIXEL_BUF_COUNT][PIXEL_BUF_SIZE];
 static int back_buf = 0;  /* index emulator writes to */
 static int front_buf = 0; /* index display reads from */
 
@@ -148,6 +155,7 @@ int __attribute__((section(".time_critical.qnes_emulate_frame"))) qnes_emulate_f
     /* Frame complete — swap buffers. Display now reads the just-finished
        frame while the emulator will write to the other buffer next time. */
     front_buf = back_buf;
+#if PIXEL_BUF_COUNT > 1
     back_buf ^= 1;
 
     /* Sprite blink persistence: when the visible sprite count drops
@@ -171,6 +179,7 @@ int __attribute__((section(".time_critical.qnes_emulate_frame"))) qnes_emulate_f
         }
         prev_sprite_count = cur_count;
     }
+#endif
 
     emu->set_pixels(pixel_bufs[back_buf], 256 + 16);
     return 0;
