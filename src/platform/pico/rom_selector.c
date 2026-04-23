@@ -945,6 +945,9 @@ static void draw_scene(int selected, int bounce_idx) {
 static int read_selector_buttons(void) {
     nespad_read();
     ps2kbd_tick();
+#ifdef USB_HID_ENABLED
+    usbhid_task();
+#endif
     int buttons = 0;
     uint32_t pad = nespad_state | nespad_state2;
     if (pad & DPAD_LEFT)   buttons |= BTN_LEFT;

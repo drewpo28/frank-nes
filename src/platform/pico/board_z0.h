@@ -29,8 +29,8 @@
 
 /* I2S Audio */
 #define HAS_I2S 1
-#define I2S_DATA_PIN       21
-#define I2S_CLOCK_PIN_BASE 18
+#define I2S_DATA_PIN       10
+#define I2S_CLOCK_PIN_BASE 11
 
 /* PWM Audio */
 #define PWM_PIN0 10

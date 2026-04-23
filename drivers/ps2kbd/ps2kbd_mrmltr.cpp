@@ -336,8 +336,9 @@ void Ps2Kbd_Mrmltr::tick() {
     _overflow = true;
     while (!pio_sm_is_rx_fifo_empty(_pio, _sm)) {
       // pull a scan code from the PIO SM fifo
-      uint32_t rc = _pio->rxf[_sm];    
-      printf("PS/2 drain rc %4.4lX (%ld)\n", (unsigned long)rc, (long)rc);
+      uint32_t rc = _pio->rxf[_sm];
+      DBG_PRINTF("PS/2 drain rc %4.4lX (%ld)\n", (unsigned long)rc, (long)rc);
+      (void)rc;
     }
     clearHidKeys();
     clearActions();

@@ -24,9 +24,6 @@
 #define HDMI_BASE_PIN (12)
 #endif
 
-#define HDMI_PIN_RGB_notBGR (1)
-#define HDMI_PIN_invert_diffpairs (1)
-
 #ifndef PIO_VIDEO
 #define PIO_VIDEO pio0
 #endif
@@ -34,12 +31,26 @@
 #define PIO_VIDEO_ADDR pio0
 #endif
 
-#ifndef beginHDMI_PIN_data
-#define beginHDMI_PIN_data (HDMI_BASE_PIN+2)
-#endif
-
-#ifndef beginHDMI_PIN_clk
-#define beginHDMI_PIN_clk (HDMI_BASE_PIN)
+/* Waveshare RP2350-PiZero (z0): data lanes first, clock last, BGR order,
+ * non-inverted diff pairs. All other supported boards use clock first. */
+#ifdef PLATFORM_Z0
+    #define HDMI_PIN_RGB_notBGR (0)
+    #define HDMI_PIN_invert_diffpairs (0)
+    #ifndef beginHDMI_PIN_data
+    #define beginHDMI_PIN_data (HDMI_BASE_PIN)
+    #endif
+    #ifndef beginHDMI_PIN_clk
+    #define beginHDMI_PIN_clk (HDMI_BASE_PIN + 6)
+    #endif
+#else
+    #define HDMI_PIN_RGB_notBGR (1)
+    #define HDMI_PIN_invert_diffpairs (1)
+    #ifndef beginHDMI_PIN_data
+    #define beginHDMI_PIN_data (HDMI_BASE_PIN+2)
+    #endif
+    #ifndef beginHDMI_PIN_clk
+    #define beginHDMI_PIN_clk (HDMI_BASE_PIN)
+    #endif
 #endif
 
 /* --- VGA pin configuration (shared PIO/DMA — only one active) --- */
